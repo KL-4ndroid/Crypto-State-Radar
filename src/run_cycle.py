@@ -12,9 +12,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from live_collector import collect_market
-from persistence import JsonlResearchStore
-from radar_engine import classify
+try:
+    from .live_collector import collect_market
+    from .persistence import JsonlResearchStore
+    from .radar_engine import classify
+except ImportError:  # Allow direct execution: python src/run_cycle.py
+    from live_collector import collect_market
+    from persistence import JsonlResearchStore
+    from radar_engine import classify
 
 PRIORITY = {"EVAAUSDT", "ONUSDT", "PREDICTUSDT"}
 SIGNAL_STATES = {"EARLY_WARNING", "PUMP_PRESSURE", "DUMP_PRESSURE", "LONG_READY", "SHORT_READY"}
@@ -42,7 +47,6 @@ def _features(snapshot: dict[str, Any], previous: dict[str, Any] | None) -> dict
     current_price = _safe_float(snapshot.get("price"))
     previous_price = _safe_float((previous or {}).get("price"))
     price_change_1h = None
-    # Until a true one-hour price observation exists in the journal, do not fake it.
     if previous and previous.get("age_minutes") == 60 and current_price and previous_price:
         price_change_1h = (current_price / previous_price - 1.0) * 100.0
 
