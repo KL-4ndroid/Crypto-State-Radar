@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
   "git": {
     "deploymentEnabled": true
   },
@@ -10,21 +11,44 @@
     },
     "api/scan.py": {
       "includeFiles": "src/**",
-      "maxDuration": 300
+      "maxDuration": 60
     }
   },
-  "rewrites": [
+  "routes": [
     {
-      "source": "/",
-      "destination": "/index.html"
+      "src": "^/$",
+      "dest": "/api/index.py?probe=dashboard"
     },
     {
-      "source": "/api/health",
-      "destination": "/api/index.py?probe=health"
+      "src": "^/index\\.html$",
+      "dest": "/api/index.py?probe=dashboard"
     },
     {
-      "source": "/api/binance-health",
-      "destination": "/api/index.py?probe=binance"
+      "src": "^/api/scan$",
+      "dest": "/api/scan.py"
+    },
+    {
+      "src": "^/api/health$",
+      "dest": "/api/index.py?probe=health"
+    },
+    {
+      "src": "^/api/binance-health$",
+      "dest": "/api/index.py?probe=binance"
+    },
+    {
+      "src": "^/api/state-health$",
+      "dest": "/api/index.py?probe=state-health"
+    },
+    {
+      "src": "^/api/persistence-probe$",
+      "dest": "/api/index.py?probe=persistence"
+    },
+    {
+      "src": "^/api/state$",
+      "dest": "/api/index.py?probe=state"
+    },
+    {
+      "handle": "filesystem"
     }
   ]
 }

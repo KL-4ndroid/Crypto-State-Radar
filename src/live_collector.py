@@ -8,16 +8,19 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 DEFAULT_BASE_URL = "https://fapi.binance.com"
 BASE_URL = os.getenv("CSR_BINANCE_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+OI_HISTORY_LIMIT = 289  # current 5m bar + 288 bars back = 24 hours
+DEFAULT_OI_WORKERS = 8
+MAX_OI_WORKERS = 16
 
 
 class MarketDataUnavailable(RuntimeError):
@@ -73,7 +76,23 @@ def _pct_change(current: float, previous: float) -> float | None:
 
 
 def _oi_history(symbol: str) -> list[dict[str, Any]]:
-    return _get("/futures/data/openInterestHist", {"symbol": symbol, "period": "5m", "limit": 500})
+    # We only derive 1h / 4h / 24h OI deltas, so requesting 500 points was
+    # unnecessary payload. 289 five-minute points are exactly enough to compare
+    # the current observation with 288 bars (24 hours) ago.
+    return _get(
+        "/futures/data/openInterestHist",
+        {"symbol": symbol, "period": "5m", "limit": OI_HISTORY_LIMIT},
+    )
+
+
+def _oi_worker_count() -> int:
+    """Return a conservative bounded worker count for per-symbol OI history."""
+    raw = os.getenv("CSR_OI_WORKERS", str(DEFAULT_OI_WORKERS))
+    try:
+        workers = int(raw)
+    except (TypeError, ValueError):
+        workers = DEFAULT_OI_WORKERS
+    return max(1, min(MAX_OI_WORKERS, workers))
 
 
 def collect_symbol(symbol: str, ticker: dict[str, Any] | None = None, funding: dict[str, Any] | None = None) -> MarketSnapshot:
@@ -100,20 +119,40 @@ def collect_symbol(symbol: str, ticker: dict[str, Any] | None = None, funding: d
     )
 
 
-def collect_market(symbols: list[str] | None = None, pause_seconds: float = 0.08) -> list[dict[str, Any]]:
+def collect_market(symbols: list[str] | None = None, pause_seconds: float = 0.0) -> list[dict[str, Any]]:
+    """Collect one full-market snapshot with bounded parallel OI requests.
+
+    Batch ticker and premium-index endpoints are still fetched only once. The
+    expensive per-symbol OI history requests are executed with a small bounded
+    worker pool instead of serially. ``pause_seconds`` remains in the signature
+    for backwards compatibility but is intentionally unused; concurrency is
+    bounded by ``CSR_OI_WORKERS`` (default 8, maximum 16).
+    """
+    del pause_seconds
+
     # Bootstrap requests intentionally fail fast: if the runner itself is blocked,
     # returning hundreds of per-symbol errors would hide the infrastructure issue.
     symbols = symbols or active_usdt_perpetuals()
     tickers = {x["symbol"]: x for x in _get("/fapi/v1/ticker/24hr") if x.get("symbol") in symbols}
     premiums = {x["symbol"]: x for x in _get("/fapi/v1/premiumIndex") if x.get("symbol") in symbols}
-    rows: list[dict[str, Any]] = []
-    for symbol in symbols:
+
+    def collect_one(symbol: str) -> dict[str, Any]:
         try:
-            rows.append(asdict(collect_symbol(symbol, tickers.get(symbol), premiums.get(symbol))))
+            return asdict(collect_symbol(symbol, tickers.get(symbol), premiums.get(symbol)))
         except Exception as exc:
-            rows.append({"symbol": symbol, "observed_at": datetime.now(timezone.utc).isoformat(), "error": str(exc)})
-        time.sleep(pause_seconds)
-    return rows
+            return {
+                "symbol": symbol,
+                "observed_at": datetime.now(timezone.utc).isoformat(),
+                "error": str(exc),
+            }
+
+    if not symbols:
+        return []
+
+    workers = min(_oi_worker_count(), len(symbols))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="radar-oi") as executor:
+        # executor.map preserves input order, keeping journal/state output stable.
+        return list(executor.map(collect_one, symbols))
 
 
 if __name__ == "__main__":
