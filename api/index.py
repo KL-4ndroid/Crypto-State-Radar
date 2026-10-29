@@ -14,10 +14,12 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
+from pathlib import Path
 
 BINANCE_EXCHANGE_INFO = "https://fapi.binance.com/fapi/v1/exchangeInfo"
 STATE_KEY = "crypto-state-radar:state:v1"
 PROBE_KEY = "crypto-state-radar:persistence-probe:v1"
+DASHBOARD_FILE = Path(__file__).resolve().parent.parent / "index.html"
 
 
 def _upstash_request(command: list[str]) -> object:
@@ -129,8 +131,23 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_dashboard(self) -> None:
+        if not DASHBOARD_FILE.exists():
+            self._send(503, {"error": "dashboard_file_missing"})
+            return
+        body = DASHBOARD_FILE.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:
         path, probe = self._route()
+        if path in {"/", "/index.html"}:
+            self._send_dashboard()
+            return
         try:
             if path == "/api/binance-health" or probe == "binance":
                 status, payload = _binance_health()
@@ -146,8 +163,8 @@ class handler(BaseHTTPRequestHandler):
                     status, payload = _persistence_probe()
             elif path == "/api/state" or probe == "state":
                 status, payload = 200, _load_state()
-            elif path in {"/", "/api", "/api/health", "/api/index.py"}:
-                status, payload = 200, {"service": "crypto-state-radar", "status": "ok", "role": "dashboard-api", "scanner": "vercel-cron", "vercel_region": "sin1"}
+            elif path in {"/api", "/api/health", "/api/index.py"}:
+                status, payload = 200, {"service": "crypto-state-radar", "status": "ok", "role": "dashboard-api", "scanner": "github-hourly-trigger", "vercel_region": "sin1"}
             else:
                 status, payload = 404, {"error": "not_found", "path_seen": path}
         except Exception as exc:
