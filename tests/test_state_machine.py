@@ -3,13 +3,25 @@ from datetime import datetime, timedelta, timezone
 from src.state_machine import JsonStateStore, SymbolState, decode_snapshot, encode_snapshot, transition
 
 
-def decision(state, direction, price, p1, oi1, expires_at=None, open_interest=100.0):
+def decision(state, direction, price, p1, oi1, expires_at=None, open_interest=100.0,
+             oi4=None, oi24=None, funding=None, pump_score=0.0, dump_score=0.0):
     return {
         "state": state,
         "direction": direction,
         "expires_at": expires_at,
         "model_version": "test",
-        "features": {"price": price, "open_interest": open_interest, "price_change_1h": p1, "oi_change_1h": oi1},
+        "pump_score": pump_score,
+        "dump_score": dump_score,
+        "reasons": ["OI_ACCELERATION"],
+        "features": {
+            "price": price,
+            "open_interest": open_interest,
+            "price_change_1h": p1,
+            "oi_change_1h": oi1,
+            "oi_change_4h": oi4,
+            "oi_change_24h": oi24,
+            "funding_rate": funding,
+        },
     }
 
 
@@ -65,6 +77,7 @@ def test_legacy_snapshot_remains_readable():
     assert restored.state == "WATCH"
     assert restored.cycle == 2
     assert restored.peak_oi is None
+    assert restored.pump_score is None
 
 
 def test_json_store_persists_versioned_snapshot(tmp_path):
@@ -84,3 +97,26 @@ def test_transition_tracks_price_and_oi_extremes():
     assert state.peak_oi == 120.0
     assert state.trough_price == 1.0
     assert state.trough_oi == 100.0
+
+
+def test_transition_persists_latest_dashboard_metrics():
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    prev = SymbolState("ONUSDT")
+    state, _ = transition(
+        prev,
+        decision(
+            "EARLY_WARNING", "SHORT_WATCH", 0.1919, -1.2, 9.33,
+            open_interest=15_470_000, oi4=10.63, oi24=51.65,
+            funding=0.0001, pump_score=18.0, dump_score=62.5,
+        ),
+        now,
+    )
+    assert state.last_price == 0.1919
+    assert state.last_open_interest == 15_470_000
+    assert state.oi_change_1h == 9.33
+    assert state.oi_change_4h == 10.63
+    assert state.oi_change_24h == 51.65
+    assert state.funding_rate == 0.0001
+    assert state.pump_score == 18.0
+    assert state.dump_score == 62.5
+    assert state.last_reasons == ["OI_ACCELERATION"]

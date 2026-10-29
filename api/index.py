@@ -14,10 +14,90 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
+from pathlib import Path
 
 BINANCE_EXCHANGE_INFO = "https://fapi.binance.com/fapi/v1/exchangeInfo"
 STATE_KEY = "crypto-state-radar:state:v1"
 PROBE_KEY = "crypto-state-radar:persistence-probe:v1"
+DASHBOARD_FILE = Path(__file__).resolve().parent.parent / "index.html"
+
+# The dashboard stays a single static HTML file. Inject the small authenticated
+# manual-scan control at response time so the CSR token is never embedded in the
+# deployed page, persisted in browser storage, or exposed by a public endpoint.
+DASHBOARD_ENHANCEMENT = r"""
+<style id="manual-scan-style">
+#manualScanDialog{inset:50% auto auto 50%;width:min(470px,calc(100% - 28px));height:auto;max-height:calc(100dvh - 32px);margin:0;padding:0;transform:translate(-50%,-48%);border:1px solid rgba(139,219,255,.16);border-radius:22px;background:linear-gradient(180deg,rgba(12,29,43,.985),rgba(6,18,28,.99));box-shadow:0 32px 90px rgba(0,0,0,.5);opacity:0;transition:transform .2s ease,opacity .2s ease;color:#edf8fd;overflow:hidden}
+#manualScanDialog[open]{transform:translate(-50%,-50%);opacity:1}
+#manualScanDialog::backdrop{background:rgba(2,8,12,.68);backdrop-filter:blur(6px)}
+.manual-scan-head{padding:23px 24px 17px;border-bottom:1px solid rgba(255,255,255,.055)}
+.manual-scan-head h2{margin:0 0 7px;font-size:19px;letter-spacing:-.025em}.manual-scan-head p{margin:0;color:#6f8998;font-size:11px;line-height:1.7}
+.manual-scan-body{padding:21px 24px 24px}.manual-scan-label{display:block;color:#7892a2;font-size:10px;margin-bottom:8px}.manual-scan-input{width:100%;min-height:46px;padding:11px 13px;border:1px solid rgba(139,219,255,.13);border-radius:13px;background:rgba(2,11,18,.58);color:#edf8fd;outline:none;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.manual-scan-input:focus{border-color:rgba(100,217,235,.32);box-shadow:0 0 0 3px rgba(100,217,235,.05)}
+.manual-scan-note{margin:10px 0 0;color:#536f7d;font-size:9px;line-height:1.6}.manual-scan-status{min-height:22px;margin:15px 0 0;color:#7892a2;font-size:10px;line-height:1.6}.manual-scan-status.ok{color:#75d39c}.manual-scan-status.bad{color:#ee9299}.manual-scan-status.busy{color:#8bdfea}
+.manual-scan-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:17px}.manual-scan-primary{border-color:rgba(100,217,235,.24)!important;background:rgba(100,217,235,.075)!important}.manual-scan-primary:hover{background:rgba(100,217,235,.12)!important}
+#manualScanBtn{border-color:rgba(100,217,235,.16);background:rgba(100,217,235,.035)}#manualScanBtn.busy{border-color:rgba(100,217,235,.3);box-shadow:0 0 22px rgba(100,217,235,.07)}
+@media(max-width:720px){#manualScanDialog{width:calc(100% - 20px)}.manual-scan-head,.manual-scan-body{padding-left:18px;padding-right:18px}}
+@media(prefers-reduced-motion:reduce){#manualScanDialog{transition:none!important}}
+</style>
+<script>
+(()=>{
+  const actions=document.querySelector('.actions');
+  const refresh=document.getElementById('refreshBtn');
+  if(!actions||document.getElementById('manualScanBtn'))return;
+
+  const scanBtn=document.createElement('button');
+  scanBtn.id='manualScanBtn';scanBtn.className='btn';scanBtn.type='button';scanBtn.setAttribute('aria-label','立即掃描市場');
+  scanBtn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><circle cx="12" cy="12" r="4"/></svg><span>立即掃描</span>';
+  actions.insertBefore(scanBtn,refresh||null);
+
+  const dlg=document.createElement('dialog');dlg.id='manualScanDialog';
+  dlg.innerHTML='<div class="manual-scan-head"><h2>手動更新市場</h2><p>這會立即重新抓取市場資料，執行完整分析與生命週期驗證，完成後更新整個儀表板。</p></div><div class="manual-scan-body"><label class="manual-scan-label" for="manualScanToken">CSR 掃描權杖</label><input id="manualScanToken" class="manual-scan-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="輸入 CSR_SCAN_TOKEN value"><p class="manual-scan-note">權杖只用於這一次請求，不會寫入 localStorage、sessionStorage 或頁面原始碼。</p><div id="manualScanStatus" class="manual-scan-status"></div><div class="manual-scan-actions"><button id="manualScanCancel" class="btn" type="button">取消</button><button id="manualScanRun" class="btn manual-scan-primary" type="button">開始掃描</button></div></div>';
+  document.body.appendChild(dlg);
+
+  const input=document.getElementById('manualScanToken'),runBtn=document.getElementById('manualScanRun'),cancelBtn=document.getElementById('manualScanCancel'),status=document.getElementById('manualScanStatus');
+  let running=false;
+  const setStatus=(text,kind='')=>{status.textContent=text;status.className=`manual-scan-status ${kind}`.trim()};
+  const open=()=>{if(running)return;setStatus('');input.value='';dlg.showModal();setTimeout(()=>input.focus(),30)};
+  const close=()=>{if(running)return;input.value='';dlg.close()};
+
+  async function runManualScan(){
+    const token=input.value.trim();
+    if(!token){setStatus('請先輸入 CSR 掃描權杖。','bad');input.focus();return}
+    running=true;scanBtn.disabled=true;scanBtn.classList.add('busy');runBtn.disabled=true;cancelBtn.disabled=true;input.disabled=true;runBtn.textContent='掃描中…';setStatus('正在重新抓取市場並執行分析與驗證，請保持此頁開啟。','busy');
+    try{
+      const response=await fetch('/api/scan',{method:'POST',cache:'no-store',headers:{'Authorization':`Bearer ${token}`,'Accept':'application/json'}});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok){
+        if(response.status===401)throw new Error('權杖不正確，請重新確認。');
+        if(payload.error==='scan_token_not_configured')throw new Error('Vercel 尚未設定掃描權杖。');
+        throw new Error(payload.error_type?`掃描失敗（${payload.error_type}）`:'掃描失敗，請稍後查看執行紀錄。');
+      }
+      setStatus('掃描、分析與狀態驗證已完成，正在載入最新結果。','ok');
+      input.value='';
+      setTimeout(()=>{dlg.close();refresh?.click()},650);
+    }catch(err){
+      input.value='';setStatus(err?.message||'掃描失敗，請重新嘗試。','bad');
+    }finally{
+      running=false;scanBtn.disabled=false;scanBtn.classList.remove('busy');runBtn.disabled=false;cancelBtn.disabled=false;input.disabled=false;runBtn.textContent='開始掃描';
+    }
+  }
+
+  scanBtn.addEventListener('click',open);cancelBtn.addEventListener('click',close);runBtn.addEventListener('click',runManualScan);
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runManualScan()}});
+  dlg.addEventListener('cancel',e=>{if(running)e.preventDefault();else input.value=''});
+  dlg.addEventListener('click',e=>{if(e.target===dlg&&!running)close()});
+
+  // The production scheduler now runs at minute 7 of every hour. Keep the
+  // dashboard countdown aligned with the real GitHub Actions schedule.
+  const updateMinute7Countdown=()=>{
+    const now=new Date(),next=new Date(now);next.setMinutes(7,0,0);if(next<=now)next.setHours(next.getHours()+1);
+    const sec=Math.max(0,Math.floor((next-now)/1000)),mm=String(Math.floor(sec/60)).padStart(2,'0'),ss=String(sec%60).padStart(2,'0');
+    const value=document.getElementById('nextScanValue'),foot=document.getElementById('nextScanFoot');if(value)value.textContent=`${mm}:${ss}`;if(foot)foot.textContent=`下次自動掃描 ${next.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false})}`;
+    document.querySelectorAll('.metric-foot').forEach(el=>{if(el.textContent.includes('整點重新掃描'))el.textContent='每小時第 7 分鐘重新掃描完整市場'});
+  };
+  updateMinute7Countdown();setInterval(updateMinute7Countdown,1000);
+})();
+</script>
+"""
 
 
 def _upstash_request(command: list[str]) -> object:
@@ -129,8 +209,26 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_dashboard(self) -> None:
+        if not DASHBOARD_FILE.exists():
+            self._send(503, {"error": "dashboard_file_missing"})
+            return
+        html = DASHBOARD_FILE.read_text(encoding="utf-8")
+        if "</body>" in html:
+            html = html.replace("</body>", f"{DASHBOARD_ENHANCEMENT}\n</body>", 1)
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:
         path, probe = self._route()
+        if path in {"/", "/index.html"}:
+            self._send_dashboard()
+            return
         try:
             if path == "/api/binance-health" or probe == "binance":
                 status, payload = _binance_health()
@@ -146,8 +244,8 @@ class handler(BaseHTTPRequestHandler):
                     status, payload = _persistence_probe()
             elif path == "/api/state" or probe == "state":
                 status, payload = 200, _load_state()
-            elif path in {"/", "/api", "/api/health", "/api/index.py"}:
-                status, payload = 200, {"service": "crypto-state-radar", "status": "ok", "role": "dashboard-api", "scanner": "vercel-cron", "vercel_region": "sin1"}
+            elif path in {"/api", "/api/health", "/api/index.py"}:
+                status, payload = 200, {"service": "crypto-state-radar", "status": "ok", "role": "dashboard-api", "scanner": "github-hourly-trigger", "vercel_region": "sin1"}
             else:
                 status, payload = 404, {"error": "not_found", "path_seen": path}
         except Exception as exc:

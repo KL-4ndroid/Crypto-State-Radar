@@ -34,6 +34,17 @@ class SymbolState:
     trough_price: float | None = None
     trough_oi: float | None = None
     last_transition: str | None = None
+    # Latest scan context for the read-only dashboard. These fields do not
+    # participate in lifecycle transitions; they only explain the current state.
+    last_price: float | None = None
+    last_open_interest: float | None = None
+    oi_change_1h: float | None = None
+    oi_change_4h: float | None = None
+    oi_change_24h: float | None = None
+    funding_rate: float | None = None
+    pump_score: float | None = None
+    dump_score: float | None = None
+    last_reasons: list[str] | None = None
 
 
 def state_to_dict(state: SymbolState) -> dict[str, Any]:
@@ -172,6 +183,15 @@ def transition(previous: SymbolState, decision: dict[str, Any], now: datetime | 
         trough_price=trough_price,
         trough_oi=trough_oi,
         last_transition=transition_name,
+        last_price=price,
+        last_open_interest=oi,
+        oi_change_1h=_number(features.get("oi_change_1h")),
+        oi_change_4h=_number(features.get("oi_change_4h")),
+        oi_change_24h=_number(features.get("oi_change_24h")),
+        funding_rate=_number(features.get("funding_rate")),
+        pump_score=_number(decision.get("pump_score")),
+        dump_score=_number(decision.get("dump_score")),
+        last_reasons=list(decision.get("reasons") or []),
     )
 
     event = None
