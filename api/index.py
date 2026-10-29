@@ -6,6 +6,7 @@ are never returned by these endpoints.
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import urllib.error
@@ -24,10 +25,15 @@ def _upstash_request(command: list[str]) -> object:
     token = os.getenv("KV_REST_API_TOKEN")
     if not base_url or not token:
         raise RuntimeError("Upstash Redis environment is not configured")
-    path = "/" + "/".join(urllib.parse.quote(part, safe="") for part in command)
     request = urllib.request.Request(
-        base_url.rstrip("/") + path,
-        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        base_url.rstrip("/"),
+        data=json.dumps(command, separators=(",", ":")).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
     )
     with urllib.request.urlopen(request, timeout=8) as response:
         payload = json.loads(response.read().decode("utf-8") or "{}")
@@ -37,7 +43,7 @@ def _upstash_request(command: list[str]) -> object:
 
 
 def _load_state() -> dict[str, object]:
-    raw = _upstash_request(["get", STATE_KEY])
+    raw = _upstash_request(["GET", STATE_KEY])
     if raw is None:
         return {"schema_version": 1, "states": {}}
     payload = json.loads(str(raw))
@@ -47,14 +53,22 @@ def _load_state() -> dict[str, object]:
 
 
 def _save_state(payload: dict[str, object]) -> None:
-    _upstash_request(["set", STATE_KEY, json.dumps(payload, separators=(",", ":"))])
+    result = _upstash_request(["SET", STATE_KEY, json.dumps(payload, separators=(",", ":"))])
+    if result != "OK":
+        raise RuntimeError("Upstash Redis SET did not return OK")
+
+
+def _authorized(header: str | None, secret: str | None) -> bool:
+    if not secret or not header or not header.startswith("Bearer "):
+        return False
+    return hmac.compare_digest(header[7:], secret)
 
 
 def _persistence_probe() -> tuple[int, dict[str, object]]:
     """Exercise Redis SET/GET without touching the real Radar snapshot."""
     marker = datetime.now(timezone.utc).isoformat()
-    written = _upstash_request(["set", PROBE_KEY, marker, "EX", "60"])
-    read_back = _upstash_request(["get", PROBE_KEY])
+    written = _upstash_request(["SET", PROBE_KEY, marker, "EX", "60"])
+    read_back = _upstash_request(["GET", PROBE_KEY])
     matched = written == "OK" and read_back == marker
     return (200 if matched else 503), {
         "service": "crypto-state-radar",
@@ -89,7 +103,7 @@ def _state_health() -> tuple[int, dict[str, object]]:
 
 
 def _binance_health() -> tuple[int, dict[str, object]]:
-    request = urllib.request.Request(BINANCE_EXCHANGE_INFO, headers={"User-Agent": "Crypto-State-Radar/0.3 connectivity-check"})
+    request = urllib.request.Request(BINANCE_EXCHANGE_INFO, headers={"User-Agent": "Crypto-State-Radar/0.4 connectivity-check"})
     try:
         with urllib.request.urlopen(request, timeout=8) as response:
             response.read(1)
@@ -123,11 +137,17 @@ class handler(BaseHTTPRequestHandler):
             elif path == "/api/state-health" or probe == "state-health":
                 status, payload = _state_health()
             elif path == "/api/persistence-probe" or probe == "persistence":
-                status, payload = _persistence_probe()
+                secret = os.getenv("CRON_SECRET") or os.getenv("CSR_STATE_STORE_TOKEN")
+                if not secret:
+                    status, payload = 503, {"error": "probe_auth_not_configured"}
+                elif not _authorized(self.headers.get("Authorization"), secret):
+                    status, payload = 401, {"error": "unauthorized"}
+                else:
+                    status, payload = _persistence_probe()
             elif path == "/api/state" or probe == "state":
                 status, payload = 200, _load_state()
             elif path in {"/", "/api", "/api/health", "/api/index.py"}:
-                status, payload = 200, {"service": "crypto-state-radar", "status": "ok", "role": "dashboard-api", "scanner": "external-worker", "vercel_region": "sin1"}
+                status, payload = 200, {"service": "crypto-state-radar", "status": "ok", "role": "dashboard-api", "scanner": "vercel-cron", "vercel_region": "sin1"}
             else:
                 status, payload = 404, {"error": "not_found", "path_seen": path}
         except Exception as exc:
@@ -139,6 +159,15 @@ class handler(BaseHTTPRequestHandler):
         if path != "/api/state" and probe != "state":
             self._send(404, {"error": "not_found", "path_seen": path})
             return
+
+        secret = os.getenv("CSR_STATE_STORE_TOKEN")
+        if not secret:
+            self._send(503, {"error": "state_write_disabled"})
+            return
+        if not _authorized(self.headers.get("Authorization"), secret):
+            self._send(401, {"error": "unauthorized"})
+            return
+
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
