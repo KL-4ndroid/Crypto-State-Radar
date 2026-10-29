@@ -1,0 +1,14 @@
+{
+  "model_version": "V2.3.0-alpha",
+  "scan_interval_minutes": 5,
+  "candidate_threshold": 40,
+  "pressure_threshold": 60,
+  "ready_threshold": 70,
+  "ready_ttl_minutes": 240,
+  "validation_horizons": ["1h", "3h", "6h", "12h", "24h", "3d", "7d"],
+  "immutable_signal_journal": true,
+  "store_failed_signals": true,
+  "raw_data_interval": "5m",
+  "priority_symbols": ["EVAAUSDT", "ONUSDT", "PREDICTUSDT"],
+  "notes": "V2.3 discovers pressure; V2.2 confirms execution state. No LLM dependency. Thresholds are experimental and must be versioned after backtesting."
+}
