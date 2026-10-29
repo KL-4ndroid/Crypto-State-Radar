@@ -1,15 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "git": {
-    "deploymentEnabled": {
-      "main": true,
-      "feature/autonomous-radar-engine": false
-    }
-  },
-  "crons": [
-    {
-      "path": "/api/cron/daily-research",
-      "schedule": "23 0 * * *"
-    }
-  ]
+    "deploymentEnabled": false
+  }
 }
