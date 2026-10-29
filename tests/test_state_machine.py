@@ -1,15 +1,15 @@
 from datetime import datetime, timedelta, timezone
 
-from src.state_machine import SymbolState, transition
+from src.state_machine import JsonStateStore, SymbolState, decode_snapshot, encode_snapshot, transition
 
 
-def decision(state, direction, price, p1, oi1, expires_at=None):
+def decision(state, direction, price, p1, oi1, expires_at=None, open_interest=100.0):
     return {
         "state": state,
         "direction": direction,
         "expires_at": expires_at,
         "model_version": "test",
-        "features": {"price": price, "open_interest": 100.0, "price_change_1h": p1, "oi_change_1h": oi1},
+        "features": {"price": price, "open_interest": open_interest, "price_change_1h": p1, "oi_change_1h": oi1},
     }
 
 
@@ -47,3 +47,40 @@ def test_terminal_state_starts_new_cycle_when_setup_returns():
     assert state.state == "DUMP_PRESSURE"
     assert state.cycle == 3
     assert event["reason"] == "NEW_CYCLE"
+
+
+def test_snapshot_round_trip_preserves_sequence_memory():
+    original = SymbolState(
+        symbol="EVAAUSDT", state="DUMP_PRESSURE", direction="SHORT_WATCH",
+        cycle=4, peak_price=1.42, peak_oi=125.0, trough_price=1.08,
+        trough_oi=88.0, last_transition="WATCH->DUMP_PRESSURE",
+    )
+    restored = decode_snapshot(encode_snapshot({"EVAAUSDT": original}))["EVAAUSDT"]
+    assert restored == original
+
+
+def test_legacy_snapshot_remains_readable():
+    legacy = {"ONUSDT": {"symbol": "ONUSDT", "state": "WATCH", "cycle": 2}}
+    restored = decode_snapshot(legacy)["ONUSDT"]
+    assert restored.state == "WATCH"
+    assert restored.cycle == 2
+    assert restored.peak_oi is None
+
+
+def test_json_store_persists_versioned_snapshot(tmp_path):
+    path = tmp_path / "state.json"
+    store = JsonStateStore(path)
+    store.put(SymbolState("PREDICTUSDT", state="SHORT_READY", peak_oi=150.0))
+    reopened = JsonStateStore(path)
+    assert reopened.get("PREDICTUSDT").state == "SHORT_READY"
+    assert reopened.get("PREDICTUSDT").peak_oi == 150.0
+
+
+def test_transition_tracks_price_and_oi_extremes():
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    prev = SymbolState("BLESSUSDT", peak_price=1.0, peak_oi=100.0, trough_price=1.0, trough_oi=100.0)
+    state, _ = transition(prev, decision("WATCH", "NEUTRAL", 1.2, 2, 5, open_interest=120.0), now)
+    assert state.peak_price == 1.2
+    assert state.peak_oi == 120.0
+    assert state.trough_price == 1.0
+    assert state.trough_oi == 100.0
