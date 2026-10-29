@@ -1,8 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "git": {
-    "deploymentEnabled": false
+    "deploymentEnabled": true
   },
+  "regions": ["sin1"],
   "functions": {
     "api/index.py": {
       "runtime": "python3.12",
@@ -12,6 +13,10 @@
   "rewrites": [
     {
       "source": "/api/health",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/api/binance-health",
       "destination": "/api/index.py"
     }
   ]
