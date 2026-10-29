@@ -1,4 +1,4 @@
-"""Protected Vercel Cron entrypoint for the hourly Radar market scan."""
+"""Protected Vercel entrypoint for the hourly Radar market scan."""
 from __future__ import annotations
 
 import hmac
@@ -35,9 +35,9 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _run_scan(self) -> None:
-        secret = os.getenv("CRON_SECRET")
+        secret = os.getenv("CSR_SCAN_TOKEN")
         if not secret:
-            self._send(503, {"error": "cron_secret_not_configured", "service": "crypto-state-radar"})
+            self._send(503, {"error": "scan_token_not_configured", "service": "crypto-state-radar"})
             return
         if not _authorized(self.headers.get("Authorization"), secret):
             self._send(401, {"error": "unauthorized", "service": "crypto-state-radar"})
