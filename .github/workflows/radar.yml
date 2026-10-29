@@ -1,4 +1,4 @@
-name: Radar Research
+name: Radar Scheduler
 
 on:
   workflow_dispatch:
@@ -9,30 +9,31 @@ permissions:
   contents: read
 
 concurrency:
-  group: crypto-state-radar
+  group: crypto-state-radar-hourly-trigger
   cancel-in-progress: false
 
 jobs:
-  scan:
+  trigger:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 6
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Run market scan
+      - name: Validate scan token
         env:
-          PYTHONPATH: src
-        run: python src/run_cycle.py
-      - name: Upload research journal
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: radar-journal-${{ github.run_id }}
-          path: data/journal/
-          if-no-files-found: warn
-          retention-days: 30
+          CSR_SCAN_TOKEN: ${{ secrets.CSR_SCAN_TOKEN }}
+        run: |
+          if [ -z "$CSR_SCAN_TOKEN" ]; then
+            echo "CSR_SCAN_TOKEN repository secret is not configured."
+            exit 1
+          fi
+
+      - name: Trigger Vercel Singapore market scan
+        env:
+          CSR_SCAN_TOKEN: ${{ secrets.CSR_SCAN_TOKEN }}
+        run: |
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --max-time 300 \
+            -H "Authorization: Bearer $CSR_SCAN_TOKEN" \
+            https://crypto-state-radar.vercel.app/api/scan

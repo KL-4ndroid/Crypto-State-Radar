@@ -7,6 +7,10 @@
   "functions": {
     "api/index.py": {
       "includeFiles": "data/journal/**"
+    },
+    "api/scan.py": {
+      "includeFiles": "src/**",
+      "maxDuration": 300
     }
   },
   "rewrites": [

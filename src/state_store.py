@@ -1,8 +1,8 @@
 """Durable state-store adapters for Radar lifecycle snapshots.
 
 The state machine owns the snapshot schema. This module owns persistence.
-Production serverless workers can use an HTTP JSON store without depending on
-an ephemeral filesystem; local development keeps using the JSON file adapter.
+Serverless workers can write directly to Upstash Redis, use an HTTP JSON bridge,
+or fall back to a local JSON file for development.
 """
 from __future__ import annotations
 
@@ -13,7 +13,12 @@ import urllib.request
 from pathlib import Path
 from typing import Protocol
 
-from state_machine import SymbolState, decode_snapshot, encode_snapshot
+try:
+    from .state_machine import SymbolState, decode_snapshot, encode_snapshot
+except ImportError:  # Allow direct execution with PYTHONPATH=src
+    from state_machine import SymbolState, decode_snapshot, encode_snapshot
+
+DEFAULT_STATE_KEY = "crypto-state-radar:state:v1"
 
 
 class StateStore(Protocol):
@@ -104,8 +109,82 @@ class HttpJsonStateStore:
         return dict(self.states)
 
 
+class UpstashRestStateStore:
+    """Persist one complete lifecycle snapshot directly through Upstash REST.
+
+    Commands are sent in the request body rather than URL path segments so the
+    snapshot size is not constrained by URL-length limits.
+    """
+
+    def __init__(self, base_url: str, token: str, key: str = DEFAULT_STATE_KEY, timeout: float = 10.0) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.token = token
+        self.key = key
+        self.timeout = timeout
+        self.states = self._load()
+
+    def _command(self, *parts: object) -> object:
+        body = json.dumps([str(part) for part in parts], separators=(",", ":")).encode("utf-8")
+        request = urllib.request.Request(
+            self.base_url,
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"Upstash state command failed with HTTP {exc.code}") from exc
+        if not isinstance(payload, dict) or payload.get("error"):
+            raise RuntimeError("Upstash state command failed")
+        return payload.get("result")
+
+    def _load(self) -> dict[str, SymbolState]:
+        raw = self._command("GET", self.key)
+        if raw is None:
+            return {}
+        payload = json.loads(str(raw))
+        if not isinstance(payload, dict):
+            raise RuntimeError("stored Radar state is not a JSON object")
+        return decode_snapshot(payload)
+
+    def _save(self) -> None:
+        payload = json.dumps(encode_snapshot(self.states), ensure_ascii=False, separators=(",", ":"))
+        result = self._command("SET", self.key, payload)
+        if result != "OK":
+            raise RuntimeError("Upstash state SET did not return OK")
+
+    def get(self, symbol: str) -> SymbolState:
+        return self.states.get(symbol, SymbolState(symbol=symbol))
+
+    def put(self, state: SymbolState) -> None:
+        self.states[state.symbol] = state
+        self._save()
+
+    def put_all(self, states: dict[str, SymbolState]) -> None:
+        self.states = dict(states)
+        self._save()
+
+    def all(self) -> dict[str, SymbolState]:
+        return dict(self.states)
+
+
 def state_store_from_env() -> StateStore:
-    """Select persistence without coupling scanner code to one vendor."""
+    """Select durable persistence without coupling scanner logic to one host."""
+    upstash_url = os.getenv("KV_REST_API_URL")
+    upstash_token = os.getenv("KV_REST_API_TOKEN")
+    if upstash_url and upstash_token:
+        return UpstashRestStateStore(
+            upstash_url,
+            upstash_token,
+            key=os.getenv("CSR_STATE_KEY", DEFAULT_STATE_KEY),
+        )
+
     url = os.getenv("CSR_STATE_STORE_URL")
     if url:
         return HttpJsonStateStore(url, token=os.getenv("CSR_STATE_STORE_TOKEN"))
