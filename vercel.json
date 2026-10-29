@@ -14,34 +14,41 @@
       "maxDuration": 60
     }
   },
-  "rewrites": [
+  "routes": [
     {
-      "source": "/",
-      "destination": "/api/index?probe=dashboard"
+      "src": "^/$",
+      "dest": "/api/index.py?probe=dashboard"
     },
     {
-      "source": "/index.html",
-      "destination": "/api/index?probe=dashboard"
+      "src": "^/index\\.html$",
+      "dest": "/api/index.py?probe=dashboard"
     },
     {
-      "source": "/api/health",
-      "destination": "/api/index?probe=health"
+      "src": "^/api/scan$",
+      "dest": "/api/scan.py"
     },
     {
-      "source": "/api/binance-health",
-      "destination": "/api/index?probe=binance"
+      "src": "^/api/health$",
+      "dest": "/api/index.py?probe=health"
     },
     {
-      "source": "/api/state-health",
-      "destination": "/api/index?probe=state-health"
+      "src": "^/api/binance-health$",
+      "dest": "/api/index.py?probe=binance"
     },
     {
-      "source": "/api/persistence-probe",
-      "destination": "/api/index?probe=persistence"
+      "src": "^/api/state-health$",
+      "dest": "/api/index.py?probe=state-health"
     },
     {
-      "source": "/api/state",
-      "destination": "/api/index?probe=state"
+      "src": "^/api/persistence-probe$",
+      "dest": "/api/index.py?probe=persistence"
+    },
+    {
+      "src": "^/api/state$",
+      "dest": "/api/index.py?probe=state"
+    },
+    {
+      "handle": "filesystem"
     }
   ]
 }
