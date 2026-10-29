@@ -3,7 +3,7 @@ name: Radar Research
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 * * * *'
 
 permissions:
   contents: read
