@@ -12,11 +12,11 @@
   "rewrites": [
     {
       "source": "/api/health",
-      "destination": "/api/index.py"
+      "destination": "/api/index.py?probe=health"
     },
     {
       "source": "/api/binance-health",
-      "destination": "/api/index.py"
+      "destination": "/api/index.py?probe=binance"
     }
   ]
 }
