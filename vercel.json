@@ -13,12 +13,6 @@
       "maxDuration": 300
     }
   },
-  "crons": [
-    {
-      "path": "/api/scan",
-      "schedule": "0 * * * *"
-    }
-  ],
   "rewrites": [
     {
       "source": "/api/health",
