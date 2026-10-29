@@ -11,10 +11,12 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
 
 BINANCE_EXCHANGE_INFO = "https://fapi.binance.com/fapi/v1/exchangeInfo"
 STATE_KEY = "crypto-state-radar:state:v1"
+PROBE_KEY = "crypto-state-radar:persistence-probe:v1"
 
 
 def _upstash_request(command: list[str]) -> object:
@@ -48,6 +50,24 @@ def _save_state(payload: dict[str, object]) -> None:
     _upstash_request(["set", STATE_KEY, json.dumps(payload, separators=(",", ":"))])
 
 
+def _persistence_probe() -> tuple[int, dict[str, object]]:
+    """Exercise Redis SET/GET without touching the real Radar snapshot."""
+    marker = datetime.now(timezone.utc).isoformat()
+    written = _upstash_request(["set", PROBE_KEY, marker, "EX", "60"])
+    read_back = _upstash_request(["get", PROBE_KEY])
+    matched = written == "OK" and read_back == marker
+    return (200 if matched else 503), {
+        "service": "crypto-state-radar",
+        "probe": "state-persistence",
+        "configured": True,
+        "write_ok": written == "OK",
+        "read_back_ok": read_back == marker,
+        "persistent": matched,
+        "probe_ttl_seconds": 60,
+        "vercel_region": "sin1",
+    }
+
+
 def _state_health() -> tuple[int, dict[str, object]]:
     configured = bool(os.getenv("KV_REST_API_URL") and os.getenv("KV_REST_API_TOKEN"))
     if not configured:
@@ -65,14 +85,7 @@ def _state_health() -> tuple[int, dict[str, object]]:
             "vercel_region": "sin1",
         }
     except Exception as exc:
-        return 503, {
-            "service": "crypto-state-radar",
-            "probe": "state-store",
-            "configured": True,
-            "reachable": False,
-            "error_type": type(exc).__name__,
-            "vercel_region": "sin1",
-        }
+        return 503, {"service": "crypto-state-radar", "probe": "state-store", "configured": True, "reachable": False, "error_type": type(exc).__name__, "vercel_region": "sin1"}
 
 
 def _binance_health() -> tuple[int, dict[str, object]]:
@@ -109,6 +122,8 @@ class handler(BaseHTTPRequestHandler):
                 status, payload = _binance_health()
             elif path == "/api/state-health" or probe == "state-health":
                 status, payload = _state_health()
+            elif path == "/api/persistence-probe" or probe == "persistence":
+                status, payload = _persistence_probe()
             elif path == "/api/state" or probe == "state":
                 status, payload = 200, _load_state()
             elif path in {"/", "/api", "/api/health", "/api/index.py"}:
