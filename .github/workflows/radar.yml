@@ -1,0 +1,38 @@
+name: Radar Research
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crypto-state-radar
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run market scan
+        env:
+          PYTHONPATH: src
+        run: python src/run_cycle.py
+      - name: Upload research journal
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: radar-journal-${{ github.run_id }}
+          path: data/journal/
+          if-no-files-found: warn
+          retention-days: 30
