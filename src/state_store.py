@@ -19,6 +19,7 @@ from state_machine import SymbolState, decode_snapshot, encode_snapshot
 class StateStore(Protocol):
     def get(self, symbol: str) -> SymbolState: ...
     def put(self, state: SymbolState) -> None: ...
+    def put_all(self, states: dict[str, SymbolState]) -> None: ...
     def all(self) -> dict[str, SymbolState]: ...
 
 
@@ -31,31 +32,29 @@ class FileStateStore:
             payload = json.loads(self.path.read_text(encoding="utf-8") or "{}")
             self.states = decode_snapshot(payload)
 
+    def _save(self) -> None:
+        self.path.write_text(
+            json.dumps(encode_snapshot(self.states), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
     def get(self, symbol: str) -> SymbolState:
         return self.states.get(symbol, SymbolState(symbol=symbol))
 
     def put(self, state: SymbolState) -> None:
         self.states[state.symbol] = state
-        self.path.write_text(
-            json.dumps(encode_snapshot(self.states), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        self._save()
+
+    def put_all(self, states: dict[str, SymbolState]) -> None:
+        self.states = dict(states)
+        self._save()
 
     def all(self) -> dict[str, SymbolState]:
         return dict(self.states)
 
 
 class HttpJsonStateStore:
-    """Persist the complete versioned snapshot through a small HTTP JSON API.
-
-    Contract:
-      GET  <url> -> snapshot JSON; 404 means empty store.
-      PUT  <url> with snapshot JSON -> any 2xx response.
-
-    An optional bearer token is sent as Authorization. This deliberately keeps
-    the Radar code provider-neutral: an Upstash/Neon/Supabase-specific gateway
-    can implement this contract without changing lifecycle logic.
-    """
+    """Persist the complete versioned snapshot through a small HTTP JSON API."""
 
     def __init__(self, url: str, token: str | None = None, timeout: float = 10.0) -> None:
         self.url = url
@@ -95,6 +94,10 @@ class HttpJsonStateStore:
 
     def put(self, state: SymbolState) -> None:
         self.states[state.symbol] = state
+        self._save()
+
+    def put_all(self, states: dict[str, SymbolState]) -> None:
+        self.states = dict(states)
         self._save()
 
     def all(self) -> dict[str, SymbolState]:
