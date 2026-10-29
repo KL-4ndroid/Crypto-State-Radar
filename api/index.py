@@ -69,7 +69,7 @@ DASHBOARD_ENHANCEMENT = r"""
       if(!response.ok){
         if(response.status===401)throw new Error('權杖不正確，請重新確認。');
         if(payload.error==='scan_token_not_configured')throw new Error('Vercel 尚未設定掃描權杖。');
-        throw new Error(payload.error_type?`掃描失敗（${payload.error_type}）`:'掃描失敗，請稍後查看執行紀錄。');
+        throw new Error(payload.error_type?`掃描失敗（${payload.error_type}，HTTP ${response.status}）`:`掃描失敗（HTTP ${response.status}）`);
       }
       setStatus('掃描、分析與狀態驗證已完成，正在載入最新結果。','ok');
       input.value='';
@@ -226,7 +226,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path, probe = self._route()
-        if path in {"/", "/index.html"}:
+        if path in {"/", "/index.html"} or probe == "dashboard":
             self._send_dashboard()
             return
         try:
@@ -244,7 +244,7 @@ class handler(BaseHTTPRequestHandler):
                     status, payload = _persistence_probe()
             elif path == "/api/state" or probe == "state":
                 status, payload = 200, _load_state()
-            elif path in {"/api", "/api/health", "/api/index.py"}:
+            elif path in {"/api", "/api/health", "/api/index", "/api/index.py"} or probe == "health":
                 status, payload = 200, {"service": "crypto-state-radar", "status": "ok", "role": "dashboard-api", "scanner": "github-hourly-trigger", "vercel_region": "sin1"}
             else:
                 status, payload = 404, {"error": "not_found", "path_seen": path}
