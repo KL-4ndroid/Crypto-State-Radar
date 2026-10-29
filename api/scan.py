@@ -5,6 +5,7 @@ import hmac
 import json
 import os
 import sys
+import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -43,6 +44,7 @@ class handler(BaseHTTPRequestHandler):
             self._send(401, {"error": "unauthorized", "service": "crypto-state-radar"})
             return
 
+        started = time.monotonic()
         try:
             # Vercel's deployed filesystem is not the durable research journal.
             # Use /tmp for per-run diagnostics; lifecycle state itself is saved
@@ -52,6 +54,7 @@ class handler(BaseHTTPRequestHandler):
                 "service": "crypto-state-radar",
                 "probe": "hourly-scan",
                 "vercel_region": os.getenv("VERCEL_REGION", "sin1"),
+                "duration_seconds": round(time.monotonic() - started, 3),
                 "summary": summary,
             })
         except Exception as exc:
@@ -60,6 +63,7 @@ class handler(BaseHTTPRequestHandler):
                 "error_type": type(exc).__name__,
                 "service": "crypto-state-radar",
                 "vercel_region": os.getenv("VERCEL_REGION", "sin1"),
+                "duration_seconds": round(time.monotonic() - started, 3),
             })
 
     def do_GET(self) -> None:
