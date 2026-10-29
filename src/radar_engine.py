@@ -10,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any
 
 MODEL_VERSION = "V2.3.0-alpha"
+READY_SCORE = 55.0
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,6 @@ def score(features: dict[str, Any]) -> tuple[float, float, list[str], list[str]]
     vol_z = float(features.get("volume_z") or 0)
     compression = float(features.get("volatility_compression") or 0)
 
-    # OI acceleration compares recent hourly pace against 24h average pace.
     oi_acc = oi1 - (oi24 / 24.0)
     pump = dump = 0.0
     pr: list[str] = []
@@ -59,13 +59,11 @@ def score(features: dict[str, Any]) -> tuple[float, float, list[str], list[str]]
     if vol_z > 1.5: pump += min(18, vol_z * 5); dump += min(18, vol_z * 5)
     if compression > 0.5: pump += 10; dump += 10
 
-    # Trend response vs leverage build.
     if oi1 > 0 and p1 > 0:
         pump += min(28, p1 * 4 + oi1 * 1.5); pr.append("PRICE_UP_OI_UP")
     if oi1 > 0 and p1 < 0:
         dump += min(30, abs(p1) * 4 + oi1 * 1.5); dr.append("PRICE_DOWN_OI_UP")
 
-    # Crowding / squeeze fuel.
     if funding_z < -1.5 and p1 >= 0:
         pump += min(25, abs(funding_z) * 7); pr.append("SHORT_CROWDING_RESISTED")
     if funding_z > 1.5 and p1 <= 0:
@@ -89,12 +87,18 @@ def classify(symbol: str, features: dict[str, Any], now: datetime | None = None)
     state, direction, ttl, reasons = "WATCH", "NEUTRAL", None, []
     invalidation = "Score falls below watch threshold or structure reverses."
 
-    # V2.2 execution confirmation is intentionally stricter than V2.3 warning.
-    if dump >= 70 and p1 < 0 and p4 < 0 and oi1 < 0 and oi4 < 0:
+    # V2.3 score identifies pressure; V2.2 execution requires structure confirmation.
+    # Once both price and OI confirm on 1h + 4h, a moderate-high pressure score is
+    # sufficient for READY. Requiring 70 here made confirmed breakdowns remain only
+    # EARLY_WARNING, which contradicted the execution-state design.
+    short_confirmed = p1 < 0 and p4 < 0 and oi1 < 0 and oi4 < 0
+    long_confirmed = p1 > 0 and p4 > 0 and oi1 > 0 and oi4 > 0
+
+    if dump >= READY_SCORE and short_confirmed:
         state, direction, ttl, reasons = "SHORT_READY", "SHORT", 240, dr + ["PRICE_CONFIRMATION", "OI_RETREAT"]
         invalidation = "Price reclaims breakdown structure while OI 1h/4h re-expand."
-    elif pump >= 70 and p1 > 0 and p4 > 0 and oi1 > 0 and oi4 > 0:
-        state, direction, ttl, reasons = "LONG_READY", "LONG", 240, pr + ["PRICE_CONFIRMATION"]
+    elif pump >= READY_SCORE and long_confirmed:
+        state, direction, ttl, reasons = "LONG_READY", "LONG", 240, pr + ["PRICE_CONFIRMATION", "OI_EXPANSION"]
         invalidation = "Price loses breakout structure while OI expansion fails."
     elif dump >= 60:
         state, direction, reasons = "DUMP_PRESSURE", "SHORT_WATCH", dr
