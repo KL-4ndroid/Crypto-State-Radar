@@ -6,7 +6,7 @@
   "regions": ["sin1"],
   "functions": {
     "api/index.py": {
-      "includeFiles": "data/journal/**"
+      "includeFiles": "{data/journal/**,index.html}"
     },
     "api/scan.py": {
       "includeFiles": "src/**",
