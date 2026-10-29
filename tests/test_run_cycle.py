@@ -3,11 +3,18 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.persistence import JsonlResearchStore
-from src.run_cycle import run
+from src.run_cycle import _features, run
 
 
 def snapshot(symbol="EVAAUSDT", price=1.1, oi1=-0.03, oi4=-0.08, oi24=0.4):
     return {"symbol": symbol, "observed_at": "2026-10-29T12:00:00+00:00", "price": price, "quote_volume_24h": 1_000_000, "funding_rate": 0.0001, "open_interest": 10_000_000, "oi_change_1h": oi1, "oi_change_4h": oi4, "oi_change_24h": oi24}
+
+
+def test_oi_decimal_ratios_become_percentage_points_at_feature_boundary():
+    features = _features(snapshot(oi1=0.05, oi4=-0.08, oi24=0.4), None)
+    assert features["oi_change_1h"] == 5.0
+    assert features["oi_change_4h"] == -8.0
+    assert features["oi_change_24h"] == 40.0
 
 
 def test_cycle_always_records_objective_observation():
