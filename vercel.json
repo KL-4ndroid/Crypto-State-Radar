@@ -6,6 +6,9 @@
   },
   "regions": ["sin1"],
   "functions": {
+    "api/dashboard.py": {
+      "includeFiles": "{api/index.py,index.html}"
+    },
     "api/index.py": {
       "includeFiles": "{data/journal/**,index.html}"
     },
@@ -17,11 +20,11 @@
   "routes": [
     {
       "src": "^/$",
-      "dest": "/api/index.py?probe=dashboard"
+      "dest": "/api/dashboard.py"
     },
     {
       "src": "^/index\\.html$",
-      "dest": "/api/index.py?probe=dashboard"
+      "dest": "/api/dashboard.py"
     },
     {
       "src": "^/api/scan$",
