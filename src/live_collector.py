@@ -7,6 +7,11 @@ points happens at the feature boundary in run_cycle.py.
 from __future__ import annotations
 
 import json
+import time
+try:
+    from .request_budget import CURRENT
+except ImportError:
+    from request_budget import CURRENT
 import os
 import urllib.error
 import urllib.parse
@@ -31,9 +36,14 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
     query = urllib.parse.urlencode(params or {})
     url = f"{BASE_URL}{path}" + (f"?{query}" if query else "")
     req = urllib.request.Request(url, headers={"User-Agent": "Crypto-State-Radar/0.2"})
+    budget = CURRENT.get()
+    timeout = budget.begin() if budget else 15
+    started, failed = time.monotonic(), True
     try:
-        with urllib.request.urlopen(req, timeout=15) as response:
-            return json.loads(response.read().decode("utf-8"))
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            failed = False
+            return result
     except urllib.error.HTTPError as exc:
         if exc.code == 451:
             raise MarketDataUnavailable(
@@ -42,6 +52,9 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
                 "CSR_BINANCE_BASE_URL to an approved market-data gateway you control."
             ) from exc
         raise
+    finally:
+        if budget:
+            budget.finish(time.monotonic()-started,failed)
 
 
 @dataclass(frozen=True)
@@ -55,6 +68,7 @@ class MarketSnapshot:
     oi_change_1h: float | None
     oi_change_4h: float | None
     oi_change_24h: float | None
+    price_change_24h: float | None = None
 
 
 def active_usdt_perpetuals() -> list[str]:
@@ -116,6 +130,7 @@ def collect_symbol(symbol: str, ticker: dict[str, Any] | None = None, funding: d
         oi_change_1h=oi_change(12),
         oi_change_4h=oi_change(48),
         oi_change_24h=oi_change(288),
+        price_change_24h=float(ticker["priceChangePercent"]) if ticker.get("priceChangePercent") is not None else None,
     )
 
 
@@ -136,7 +151,10 @@ def collect_market(symbols: list[str] | None = None, pause_seconds: float = 0.0)
     tickers = {x["symbol"]: x for x in _get("/fapi/v1/ticker/24hr") if x.get("symbol") in symbols}
     premiums = {x["symbol"]: x for x in _get("/fapi/v1/premiumIndex") if x.get("symbol") in symbols}
 
+    budget = CURRENT.get()
+
     def collect_one(symbol: str) -> dict[str, Any]:
+        CURRENT.set(budget)
         try:
             return asdict(collect_symbol(symbol, tickers.get(symbol), premiums.get(symbol)))
         except Exception as exc:

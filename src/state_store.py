@@ -10,6 +10,8 @@ import json
 import os
 import urllib.error
 import urllib.request
+import threading
+import sqlite3
 from pathlib import Path
 from typing import Protocol
 
@@ -19,6 +21,7 @@ except ImportError:  # Allow direct execution with PYTHONPATH=src
     from state_machine import SymbolState, decode_snapshot, encode_snapshot
 
 DEFAULT_STATE_KEY = "crypto-state-radar:state:v1"
+_FILE_PUBLICATION_LOCK = threading.Lock()
 
 
 class StateStore(Protocol):
@@ -56,6 +59,25 @@ class FileStateStore:
 
     def all(self) -> dict[str, SymbolState]:
         return dict(self.states)
+
+    def publish_snapshot(self, payload: dict) -> bool:
+        # SQLite lock coordinates local processes as well as threads. It is not
+        # the research ledger; it only serializes replacing this local read view.
+        lock = sqlite3.connect(str(self.path)+".publish-lock",timeout=5)
+        try:
+            with _FILE_PUBLICATION_LOCK:
+                lock.execute("BEGIN EXCLUSIVE")
+                current = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+                if current.get("revision",0) > payload["revision"]:
+                    return False
+                temporary = self.path.with_suffix(".tmp")
+                temporary.write_text(json.dumps(payload,ensure_ascii=False),encoding="utf-8")
+                temporary.replace(self.path)
+        finally:
+            lock.rollback()
+            lock.close()
+        self.states = decode_snapshot(payload)
+        return True
 
 
 class HttpJsonStateStore:
@@ -172,6 +194,14 @@ class UpstashRestStateStore:
 
     def all(self) -> dict[str, SymbolState]:
         return dict(self.states)
+
+    def publish_snapshot(self, payload: dict) -> bool:
+        # Outbox replay can race newer commits; compare and write atomically.
+        script = """local raw=redis.call('GET',KEYS[1]); local rev=0;
+        if raw then local old=cjson.decode(raw); rev=tonumber(old.revision or 0) end;
+        if rev>tonumber(ARGV[1]) then return 0 end;
+        redis.call('SET',KEYS[1],ARGV[2]); return 1"""
+        return self._command("EVAL",script,1,self.key,payload["revision"],json.dumps(payload,ensure_ascii=False,separators=(",",":"))) == 1
 
 
 def state_store_from_env() -> StateStore:

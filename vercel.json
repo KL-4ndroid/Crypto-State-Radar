@@ -4,7 +4,9 @@
   "git": {
     "deploymentEnabled": true
   },
-  "regions": ["sin1"],
+  "regions": [
+    "sin1"
+  ],
   "functions": {
     "api/dashboard.py": {
       "includeFiles": "{api/index.py,index.html}"
@@ -14,6 +16,10 @@
     },
     "api/scan.py": {
       "includeFiles": "src/**",
+      "maxDuration": 60
+    },
+    "api/research.py": {
+      "includeFiles": "{src/**,api/scan.py}",
       "maxDuration": 60
     }
   },
@@ -29,6 +35,10 @@
     {
       "src": "^/api/scan$",
       "dest": "/api/scan.py"
+    },
+    {
+      "src": "^/api/research$",
+      "dest": "/api/research.py"
     },
     {
       "src": "^/api/health$",

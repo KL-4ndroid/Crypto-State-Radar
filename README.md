@@ -67,3 +67,25 @@ Raw data should be treated as append-only. Derived files can be regenerated.
 - Evaluation windows before an event: 1h / 3h / 6h / 12h / 24h
 
 These thresholds are research defaults, not trading advice and can be tuned after measuring class balance and false-positive rates.
+
+## Implementation checkpoint (not deployed)
+
+Production remains at commit `5816d3a`. The local V2.4 work is a reviewable
+checkpoint, not a production release. See [checkpoint](docs/implementation-checkpoint.md)
+for scope, acceptance evidence, remaining work, and safe continuation steps.
+
+- [Verified production baseline](docs/implementation-baseline.md)
+- [Feature/model contract](docs/model-contract.md)
+- [Lifecycle transition contract](docs/lifecycle-contract.md)
+- [Pinned baseline vs new-model synthetic replay](docs/acceptance-replay.json)
+
+The scanner now supports a transactional local ledger and an optional PostgreSQL
+adapter. Deployed new-runtime requests require `CSR_RESEARCH_DATABASE_URL` and a
+matching `CSR_RESEARCH_ENVIRONMENT`; they fail closed instead of using `/tmp` as
+a durable database. The schema must be migrated explicitly. Vercel defaults to
+shadow mode. Do not deploy this checkpoint over the live app before isolated
+PostgreSQL and preview acceptance. See `.env.example` for configuration names.
+
+The existing hourly scheduler has not been changed. The new research workflow is
+manual and disabled unless its repository enable flag and isolated URL are set.
+It does not yet provide activated automatic forward validation.

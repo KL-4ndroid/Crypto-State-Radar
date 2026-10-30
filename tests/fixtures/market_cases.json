@@ -1,0 +1,9 @@
+[
+  {"name":"up","price":110,"oi1":0.05,"oi4":0.10,"oi24":0.24,"p1":4,"p4":8,"volume_z":4,"compression":0.6,"funding_z":-2,"expected":"LONG_READY"},
+  {"name":"down","price":90,"oi1":-0.04,"oi4":-0.08,"oi24":0.60,"p1":-5,"p4":-9,"volume_z":4,"compression":0.6,"funding_z":4,"funding_acceleration":3,"expected":"SHORT_READY"},
+  {"name":"flat","price":100,"oi1":0,"oi4":0,"oi24":0,"p1":0,"p4":0,"volume_z":0,"compression":1,"funding_z":0,"expected":"WATCH"},
+  {"name":"missing","price":100,"oi1":0.05,"oi4":0.1,"oi24":0.24,"p1":null,"p4":null,"funding_z":-4,"funding_acceleration":-4,"expected":"WATCH"},
+  {"name":"new_listing","price":100,"oi1":null,"oi4":null,"oi24":null,"p1":null,"p4":null,"expected":"WATCH"},
+  {"name":"api_error","error":"HTTPError","expected":"pending"},
+  {"name":"existing_ready","price":110,"oi1":0.05,"oi4":0.10,"oi24":0.24,"p1":4,"p4":8,"volume_z":4,"compression":0.6,"funding_z":-2,"previous":"LONG_READY","expected":"TRIGGERED"}
+]

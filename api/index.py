@@ -50,7 +50,7 @@ DASHBOARD_ENHANCEMENT = r"""
   actions.insertBefore(scanBtn,refresh||null);
 
   const dlg=document.createElement('dialog');dlg.id='manualScanDialog';
-  dlg.innerHTML='<div class="manual-scan-head"><h2>手動更新市場</h2><p>這會立即重新抓取市場資料，執行完整分析與生命週期驗證，完成後更新整個儀表板。</p></div><div class="manual-scan-body"><label class="manual-scan-label" for="manualScanToken">CSR 掃描權杖</label><input id="manualScanToken" class="manual-scan-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="輸入 CSR_SCAN_TOKEN value"><p class="manual-scan-note">權杖只用於這一次請求，不會寫入 localStorage、sessionStorage 或頁面原始碼。</p><div id="manualScanStatus" class="manual-scan-status"></div><div class="manual-scan-actions"><button id="manualScanCancel" class="btn" type="button">取消</button><button id="manualScanRun" class="btn manual-scan-primary" type="button">開始掃描</button></div></div>';
+  dlg.innerHTML='<div class="manual-scan-head"><h2>手動更新市場</h2><p>這會立即重新抓取市場資料，執行完整分析與生命週期判定，完成後更新整個儀表板。</p></div><div class="manual-scan-body"><label class="manual-scan-label" for="manualScanToken">CSR 掃描權杖</label><input id="manualScanToken" class="manual-scan-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="輸入 CSR_SCAN_TOKEN value"><p class="manual-scan-note">權杖只用於這一次請求，不會寫入 localStorage、sessionStorage 或頁面原始碼。</p><div id="manualScanStatus" class="manual-scan-status"></div><div class="manual-scan-actions"><button id="manualScanCancel" class="btn" type="button">取消</button><button id="manualScanRun" class="btn manual-scan-primary" type="button">開始掃描</button></div></div>';
   document.body.appendChild(dlg);
 
   const input=document.getElementById('manualScanToken'),runBtn=document.getElementById('manualScanRun'),cancelBtn=document.getElementById('manualScanCancel'),status=document.getElementById('manualScanStatus');
@@ -62,18 +62,23 @@ DASHBOARD_ENHANCEMENT = r"""
   async function runManualScan(){
     const token=input.value.trim();
     if(!token){setStatus('請先輸入 CSR 掃描權杖。','bad');input.focus();return}
-    running=true;scanBtn.disabled=true;scanBtn.classList.add('busy');runBtn.disabled=true;cancelBtn.disabled=true;input.disabled=true;runBtn.textContent='掃描中…';setStatus('正在重新抓取市場並執行分析與驗證，請保持此頁開啟。','busy');
+    running=true;scanBtn.disabled=true;scanBtn.classList.add('busy');runBtn.disabled=true;cancelBtn.disabled=true;input.disabled=true;runBtn.textContent='掃描中…';setStatus('正在重新抓取市場並執行分析與狀態判定，請保持此頁開啟。','busy');
     try{
       const response=await fetch('/api/scan',{method:'POST',cache:'no-store',headers:{'Authorization':`Bearer ${token}`,'Accept':'application/json'}});
       const payload=await response.json().catch(()=>({}));
       if(!response.ok){
+        if(response.status===409)throw new Error('另一輪掃描已先完成，請重新整理後再試。');
         if(response.status===401)throw new Error('權杖不正確，請重新確認。');
         if(payload.error==='scan_token_not_configured')throw new Error('Vercel 尚未設定掃描權杖。');
         throw new Error(payload.error_type?`掃描失敗（${payload.error_type}，HTTP ${response.status}）`:`掃描失敗（HTTP ${response.status}）`);
       }
-      setStatus('掃描、分析與狀態驗證已完成，正在載入最新結果。','ok');
       input.value='';
-      setTimeout(()=>{dlg.close();refresh?.click()},650);
+      const summary=payload.summary||{};
+      if(summary.mode==='shadow'){setStatus('影子掃描已完成，正式市場狀態尚未切換。','ok');return}
+      if(summary.snapshot_published===false){setStatus('研究資料已保存，儀表板狀態待同步。','busy');return}
+      setStatus('分析與狀態判定已完成，正在載入最新結果。','ok');
+      if(window.refreshRadar){const loaded=await window.refreshRadar();if(!loaded)throw new Error('掃描已完成，但最新資料載入失敗，請重新整理。')}else refresh?.click();
+      dlg.close();
     }catch(err){
       input.value='';setStatus(err?.message||'掃描失敗，請重新嘗試。','bad');
     }finally{
@@ -253,6 +258,9 @@ class handler(BaseHTTPRequestHandler):
         self._send(status, payload)
 
     def do_PUT(self) -> None:
+        if os.getenv("CSR_RESEARCH_DATABASE_URL"):
+            self._send(409,{"error":"state_is_managed_by_research_ledger"})
+            return
         path, probe = self._route()
         if path != "/api/state" and probe != "state":
             self._send(404, {"error": "not_found", "path_seen": path})

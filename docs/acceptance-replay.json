@@ -1,0 +1,174 @@
+{
+  "baseline_commit": "5816d3a3806c2f68c2554f21b407bb620e278b2d",
+  "current_model": "V2.4.0-alpha",
+  "synthetic": true,
+  "results": [
+    {
+      "case": "up",
+      "before": "WATCH",
+      "before_scores": [
+        20.0,
+        20.0
+      ],
+      "after": "LONG_READY",
+      "after_scores": [
+        85.5,
+        48.0
+      ],
+      "input": {
+        "price": 110.0,
+        "open_interest": 100.0,
+        "funding_rate": null,
+        "oi_change_1h": 5.0,
+        "oi_change_4h": 10.0,
+        "oi_change_24h": 24.0,
+        "price_change_1h": 4,
+        "price_change_4h": 8,
+        "volume_z": 4,
+        "volatility_compression": 0.6,
+        "funding_z": -2,
+        "funding_acceleration": null
+      }
+    },
+    {
+      "case": "down",
+      "before": "WATCH",
+      "before_scores": [
+        0.0,
+        0.0
+      ],
+      "after": "SHORT_READY",
+      "after_scores": [
+        28.0,
+        63.0
+      ],
+      "input": {
+        "price": 90.0,
+        "open_interest": 100.0,
+        "funding_rate": null,
+        "oi_change_1h": -4.0,
+        "oi_change_4h": -8.0,
+        "oi_change_24h": 60.0,
+        "price_change_1h": -5,
+        "price_change_4h": -9,
+        "volume_z": 4,
+        "volatility_compression": 0.6,
+        "funding_z": 4,
+        "funding_acceleration": 3
+      }
+    },
+    {
+      "case": "flat",
+      "before": "WATCH",
+      "before_scores": [
+        0.0,
+        0.0
+      ],
+      "after": "WATCH",
+      "after_scores": [
+        0.0,
+        0.0
+      ],
+      "input": {
+        "price": 100.0,
+        "open_interest": 100.0,
+        "funding_rate": null,
+        "oi_change_1h": 0.0,
+        "oi_change_4h": 0.0,
+        "oi_change_24h": 0.0,
+        "price_change_1h": 0,
+        "price_change_4h": 0,
+        "volume_z": 0,
+        "volatility_compression": 1,
+        "funding_z": 0,
+        "funding_acceleration": null
+      }
+    },
+    {
+      "case": "missing",
+      "before": "WATCH",
+      "before_scores": [
+        20.0,
+        20.0
+      ],
+      "after": "WATCH",
+      "after_scores": [
+        20.0,
+        20.0
+      ],
+      "input": {
+        "price": 100.0,
+        "open_interest": 100.0,
+        "funding_rate": null,
+        "oi_change_1h": 5.0,
+        "oi_change_4h": 10.0,
+        "oi_change_24h": 24.0,
+        "price_change_1h": null,
+        "price_change_4h": null,
+        "volume_z": null,
+        "volatility_compression": null,
+        "funding_z": -4,
+        "funding_acceleration": -4
+      }
+    },
+    {
+      "case": "new_listing",
+      "before": "WATCH",
+      "before_scores": [
+        0.0,
+        0.0
+      ],
+      "after": "WATCH",
+      "after_scores": [
+        0.0,
+        0.0
+      ],
+      "input": {
+        "price": 100.0,
+        "open_interest": 100.0,
+        "funding_rate": null,
+        "oi_change_1h": null,
+        "oi_change_4h": null,
+        "oi_change_24h": null,
+        "price_change_1h": null,
+        "price_change_4h": null,
+        "volume_z": null,
+        "volatility_compression": null,
+        "funding_z": null,
+        "funding_acceleration": null
+      }
+    },
+    {
+      "case": "api_error",
+      "before": "deferred_api_error",
+      "after": "pending_api_error"
+    },
+    {
+      "case": "existing_ready",
+      "before": "WATCH",
+      "before_scores": [
+        20.0,
+        20.0
+      ],
+      "after": "TRIGGERED",
+      "after_scores": [
+        85.5,
+        48.0
+      ],
+      "input": {
+        "price": 110.0,
+        "open_interest": 100.0,
+        "funding_rate": null,
+        "oi_change_1h": 5.0,
+        "oi_change_4h": 10.0,
+        "oi_change_24h": 24.0,
+        "price_change_1h": 4,
+        "price_change_4h": 8,
+        "volume_z": 4,
+        "volatility_compression": 0.6,
+        "funding_z": -2,
+        "funding_acceleration": null
+      }
+    }
+  ]
+}

@@ -6,7 +6,7 @@ def test_short_ready_requires_price_confirmation_and_oi_retreat():
         "price_change_1h": -5.0, "price_change_4h": -9.0,
         "oi_change_1h": -4.0, "oi_change_4h": -8.0, "oi_change_24h": 60.0,
         "funding_z": 3.0, "funding_acceleration": 2.0,
-        "volume_z": 5.0, "volatility_compression": 0.8,
+        "volume_z": 5.0, "volatility_compression": 0.6,
     }
     d = classify("TESTUSDT", f)
     assert d.state == "SHORT_READY"

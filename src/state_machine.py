@@ -7,10 +7,14 @@ SQLite/PostgreSQL without changing transition semantics.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+try:
+    from .model_contract import number
+except ImportError:
+    from model_contract import number
 
 TERMINAL = {"TRIGGERED", "INVALIDATED", "EXPIRED"}
 READY = {"SHORT_READY", "LONG_READY"}
@@ -45,6 +49,11 @@ class SymbolState:
     pump_score: float | None = None
     dump_score: float | None = None
     last_reasons: list[str] | None = None
+    evaluation_status: str | None = None
+    pending_reason: str | None = None
+    checked_at: str | None = None
+    observed_at: str | None = None
+    candle_closed_at: str | None = None
 
 
 def state_to_dict(state: SymbolState) -> dict[str, Any]:
@@ -104,7 +113,7 @@ def _dt(value: str | None) -> datetime | None:
 
 
 def _number(value: Any) -> float | None:
-    return float(value) if value is not None else None
+    return number(value)
 
 
 def _max_seen(previous: float | None, current: float | None) -> float | None:
@@ -119,6 +128,10 @@ def _min_seen(previous: float | None, current: float | None) -> float | None:
     return current if previous is None else min(previous, current)
 
 
+def defer_state(previous: SymbolState, now: datetime, reason: str) -> SymbolState:
+    return replace(previous, evaluation_status="pending", pending_reason=reason, checked_at=now.isoformat())
+
+
 def transition(previous: SymbolState, decision: dict[str, Any], now: datetime | None = None) -> tuple[SymbolState, dict[str, Any] | None]:
     now = now or datetime.now(timezone.utc)
     candidate = str(decision.get("state", "WATCH"))
@@ -126,14 +139,19 @@ def transition(previous: SymbolState, decision: dict[str, Any], now: datetime | 
     features = decision.get("features") or {}
     price = _number(features.get("price"))
     oi = _number(features.get("open_interest"))
+    if price is None or price<=0 or oi is None or oi<=0:
+        return defer_state(previous,now,"insufficient_market_data"),None
 
     new_state = candidate
     reason = "RADAR_CLASSIFICATION"
 
     if previous.state in READY:
+        new_state, direction = previous.state, previous.direction
         expiry = _dt(previous.expires_at)
-        if expiry and now >= expiry and candidate != previous.state:
+        if expiry and now >= expiry:
             new_state, reason = "EXPIRED", "TTL_EXPIRED"
+        elif candidate in READY and candidate != previous.state:
+            new_state, reason = "INVALIDATED", "OPPOSITE_READY"
         elif previous.state == "SHORT_READY":
             p1 = float(features.get("price_change_1h") or 0)
             oi1 = float(features.get("oi_change_1h") or 0)
@@ -150,6 +168,8 @@ def transition(previous: SymbolState, decision: dict[str, Any], now: datetime | 
                 new_state, reason = "TRIGGERED", "BREAKOUT_AFTER_LONG_READY"
 
     cycle = previous.cycle
+    if previous.state in TERMINAL and candidate == "WATCH":
+        new_state = previous.state
     fresh_cycle = previous.state in TERMINAL and new_state not in TERMINAL
     if fresh_cycle:
         cycle += 1
@@ -167,15 +187,16 @@ def transition(previous: SymbolState, decision: dict[str, Any], now: datetime | 
     if new_state != previous.state:
         transition_name = f"{previous.state}->{new_state}"
 
+    continuing_ready = previous.state in READY and new_state == previous.state
     state = SymbolState(
         symbol=previous.symbol,
         state=new_state,
         direction=direction if new_state not in TERMINAL else previous.direction,
         entered_at=entered or now.isoformat(),
         updated_at=now.isoformat(),
-        expires_at=decision.get("expires_at") if new_state in READY else (previous.expires_at if new_state in TERMINAL else None),
-        ready_price=price if new_state in READY and price is not None else (previous.ready_price if previous.state in READY or new_state in TERMINAL else None),
-        ready_oi=oi if new_state in READY and oi is not None else (previous.ready_oi if previous.state in READY or new_state in TERMINAL else None),
+        expires_at=previous.expires_at if continuing_ready else (decision.get("expires_at") if new_state in READY else (previous.expires_at if new_state in TERMINAL else None)),
+        ready_price=previous.ready_price if continuing_ready else (price if new_state in READY else (previous.ready_price if new_state in TERMINAL else None)),
+        ready_oi=previous.ready_oi if continuing_ready else (oi if new_state in READY else (previous.ready_oi if new_state in TERMINAL else None)),
         model_version=decision.get("model_version"),
         cycle=cycle,
         peak_price=peak_price,
@@ -192,6 +213,10 @@ def transition(previous: SymbolState, decision: dict[str, Any], now: datetime | 
         pump_score=_number(decision.get("pump_score")),
         dump_score=_number(decision.get("dump_score")),
         last_reasons=list(decision.get("reasons") or []),
+        evaluation_status="partial" if features.get("missing_reasons") else "fresh",
+        checked_at=now.isoformat(),
+        observed_at=features.get("observed_at"),
+        candle_closed_at=features.get("candle_closed_at"),
     )
 
     event = None
