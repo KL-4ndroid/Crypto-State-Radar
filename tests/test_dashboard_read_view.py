@@ -28,6 +28,11 @@ def test_public_projection_identity_privacy_and_small_manifest(monkeypatch):
     encoded=dashboard_view.encode(first)
     assert all(secret not in encoded for secret in ('private-ledger','internal_error','features','notifications'))
     assert len(dashboard_view.encode(first['meta']).encode())<=2048
+    assert first['meta']['last_full_scan_at'] is None
+    payload['last_full_scan']={'processed_at':'2026-10-30T00:00:00Z'}
+    assert dashboard_view.publication(payload)['meta']['last_full_scan_at']=='2026-10-30T00:00:00Z'
+    # Full-scan heartbeat is metadata; it does not change the public list identity.
+    assert dashboard_view.publication(payload)['meta']['snapshot_id']==first['meta']['snapshot_id']
     missing=dashboard_view.publication({'states':{},'last_scan':{'processed_at':'2026-10-30T01:00:00Z'}})['meta']
     assert missing['scan_status']=='unknown' and missing['last_successful_scan_at'] is None
     partial=sample();partial['last_scan']['errors']=1

@@ -15,6 +15,7 @@
 - `?radarDebug=1` 開啟純記憶體診斷，開發者可在 console 執行 `getRadarDiagnostics()` 查看 initial／poll／retry／foreground／after-scan 等來源及合併事件。最多 80 筆，不讀 token，不記錄回應資料，不寫 browser storage，不增加 API。
 - Full scan 成功完成流程後單獨保存 `last_full_scan`；drain 保留它，不再以續跑時間取代全市場掃描時間。
 - `/api/research` 額外回傳 `last_full_scan_at` 和 `full_scan_status`。舊 ledger 無記錄時為 unknown，不虛構歷史；超過 75 分鐘為 overdue，零觀察或部分採集失敗另標 failed／partial。
+- 公開 manifest 帶出 full-scan 時間；首頁會把「全市場掃描時間待確認／已逾期」留在展開區之外，避免 fresh drain 掩蓋漏跑的全市場掃描。
 - 保護 API 每次操作輸出一筆 `radar_operation` JSON：operation、完成時間、耗時、HTTP 狀態、revision、覆蓋／待處理／驗證數、發布結果、觸發來源及 GitHub run ID。不輸出 headers、token、DSN、完整行情或例外訊息。
 - Workflow 傳送固定類別的觸發來源及 run ID。Worker 排程改在每小時 03、08、13…58 分，避開整點與 full scan 的 07 分；頻率仍為五分鐘。這是降低碰撞及重新註冊的措施，不是平台可靠性保證。
 

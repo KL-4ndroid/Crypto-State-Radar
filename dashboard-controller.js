@@ -22,8 +22,12 @@ function showMeta(meta,checkedAt=null){
   const stale=!Number.isFinite(checked)||Date.now()-checked>75*60000||checked>Date.now()+60000;
   const ageNotice=$('#dataAgeNotice');
   if(ageNotice){
-    ageNotice.textContent=!Number.isFinite(checked)?'資料時間待確認':stale?'資料較舊，訊號需重新確認':'';
-    ageNotice.hidden=!stale;
+    const full=Date.parse(meta.last_full_scan_at||'');
+    const fullKnown=Object.prototype.hasOwnProperty.call(meta,'last_full_scan_at');
+    ageNotice.textContent=!Number.isFinite(checked)?'資料時間待確認':stale?'資料較舊，訊號需重新確認'
+      :fullKnown&&!Number.isFinite(full)?'全市場掃描時間待確認'
+      :fullKnown&&(Date.now()-full>75*60000||full>Date.now()+60000)?'全市場掃描已逾期，部分標的可能尚未重評':'';
+    ageNotice.hidden=!ageNotice.textContent;
   }
   const market=stale?'unknown':meta.services?.market;
   $('#binanceDot').className=`status-dot ${market==='ok'?'ok':market==='partial'?'bad':''}`;
