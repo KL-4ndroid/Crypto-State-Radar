@@ -155,7 +155,12 @@ def run(symbols=None, root="data/journal", drain=False):
                 states[symbol] = defer_state(previous[symbol],now,"awaiting_deep_scan")
         summary.update(pending=len(queue),request_metrics=budget.report(),processed_at=datetime.now(timezone.utc).isoformat())
         records.append(("runs",run_id,summary.copy()))
-        payload = dict(encode_snapshot(states),pending=queue,last_scan=summary,model_version=MODEL_VERSION)
+        # Continuations must not make a missed full-market scan look fresh.
+        previous_full=saved.get("last_full_scan")
+        if previous_full is None and saved.get("last_scan") and not saved["last_scan"].get("drain",True):
+            previous_full=saved["last_scan"]
+        payload = dict(encode_snapshot(states),pending=queue,last_scan=summary,
+            last_full_scan=previous_full if drain else summary.copy(),model_version=MODEL_VERSION)
         payload = journal.commit_cycle(revision,payload,records)
         # DB is authoritative research ledger; Upstash is its revisioned read view.
         summary["revision"] = payload["revision"]

@@ -1,7 +1,8 @@
 name: Research Worker (bounded maintenance)
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    # Avoid minute 0 and the full-market minute 7; still twelve ticks per hour.
+    - cron: '3-58/5 * * * *'
   workflow_dispatch:
     inputs:
       operation:
@@ -26,6 +27,8 @@ jobs:
           WORKER_URL: ${{ vars.CSR_RESEARCH_WORKER_URL }}
           WORKER_TOKEN: ${{ secrets.CSR_WORKER_TOKEN }}
           OPERATION: ${{ inputs.operation || 'tick' }}
+          TRIGGER_KIND: ${{ github.event_name }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
           test -n "$WORKER_TOKEN"
@@ -34,6 +37,8 @@ jobs:
           invoke() {
             curl --fail-with-body --silent --show-error --max-time 90 \
               -X POST -H "Authorization: Bearer $WORKER_TOKEN" \
+              -H "X-Radar-Trigger: $TRIGGER_KIND" \
+              -H "X-Radar-Run-Id: $WORKFLOW_RUN_ID" \
               "${WORKER_URL%/}/api/research?operation=$1"
           }
           if [ "$OPERATION" = tick ]; then

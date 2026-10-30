@@ -46,7 +46,7 @@ const state=(symbol,extra={})=>({symbol,state:'LONG_READY',direction:'LONG',upda
  };
  await context.route('**/*',routeHandler);
  try{
-  await page.goto('https://radar.local/');
+  await page.goto('https://radar.local/?radarDebug=1');
   await page.waitForFunction(()=>document.querySelector('#priorityCount').textContent==='1 個');
   assert.equal(await page.locator('#signalValue').textContent(),'1');
   assert.match(await page.locator('#coverageStatus').textContent(),/待處理 3/);
@@ -102,6 +102,13 @@ const state=(symbol,extra={})=>({symbol,state:'LONG_READY',direction:'LONG',upda
   await page.locator('#search').fill('');
 
   assert.equal(errors.length,0,errors.join('\n'));
+  const beforeRapidResume=metaCalls;
+  for(let i=0;i<4;i++){
+   await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{value:'hidden',configurable:true});document.dispatchEvent(new Event('visibilitychange'));Object.defineProperty(document,'visibilityState',{value:'visible',configurable:true});document.dispatchEvent(new Event('visibilitychange'))});
+   await page.waitForFunction(()=>!loadTask);
+  }
+  assert.equal(metaCalls,beforeRapidResume);
+  assert.ok(await page.evaluate(()=>window.getRadarDiagnostics().filter(x=>x.event==='recent-check-reused').length>=4));
   assert.equal(await page.locator('#systemDetails').evaluate(el=>el.open),false);
   const ageWarning=await page.evaluate(()=>{const meta=currentMeta;showMeta({...meta,health_checked_at:new Date(Date.now()-120*60000).toISOString()});const text=document.querySelector('#dataAgeNotice').textContent;showMeta(meta);return text});
   assert.match(ageWarning,/資料較舊/);
@@ -154,9 +161,9 @@ const state=(symbol,extra={})=>({symbol,state:'LONG_READY',direction:'LONG',upda
   const beforeRestore=count();
   await lifecycle.evaluate(()=>{window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true}));window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}))});
   await lifecycle.waitForFunction(()=>!loadTask);
-  assert.equal(count(),beforeRestore+1);
+  assert.equal(count(),beforeRestore);
   await fallbackContext.close();
-  fs.writeFileSync(path.join(dir,'browser-result.json'),JSON.stringify({desktop:'1440x900',mobile:'390x844',stateCalls,scanCalls,pageErrors:errors,readability:'16px primary table text; auxiliary information collapsed',laptop:'1280x800',manualRefreshRace:'passed',unchangedDownloads:0,healthRequests:0,failedRead:'retained',multiTab:'broadcast and leader handoff passed',hidden:'no periodic requests for 121 seconds',offline:'paused and resumed',retryAfter:'20 seconds respected',fallback:'independent polling without Web Locks',expiredReady:'excluded',tokenPersistence:'none'},null,2));
+  fs.writeFileSync(path.join(dir,'browser-result.json'),JSON.stringify({desktop:'1440x900',mobile:'390x844',stateCalls,scanCalls,pageErrors:errors,readability:'16px primary table text; auxiliary information collapsed',laptop:'1280x800',rapidForeground:'four returns reused recent check without requests',requestDiagnostics:'opt-in memory only',manualRefreshRace:'passed',unchangedDownloads:0,healthRequests:0,failedRead:'retained',multiTab:'broadcast and leader handoff passed',hidden:'no periodic requests for 121 seconds',offline:'paused and resumed',retryAfter:'20 seconds respected',fallback:'independent polling without Web Locks',expiredReady:'excluded',tokenPersistence:'none'},null,2));
   console.log('Browser acceptance passed: desktop/mobile, freshness, manual-refresh race, token clearing.');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

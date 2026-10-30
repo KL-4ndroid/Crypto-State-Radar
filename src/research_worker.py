@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import argparse
+from datetime import datetime, timezone
 try:
     from .research_journal import open_journal, ResearchJournal
     from .state_store import state_store_from_env
@@ -33,8 +34,16 @@ def work(operation, root="data/journal"):
                 CURRENT.reset(token)
         revision,payload = journal.load()
         if operation == "status":
+            full=payload.get("last_full_scan")
+            if full is None and payload.get("last_scan") and not payload["last_scan"].get("drain",True):full=payload["last_scan"]
+            full_at=(full or {}).get("processed_at")
+            try:
+                stamp=datetime.fromisoformat(full_at.replace("Z","+00:00"))
+                age=(datetime.now(timezone.utc)-stamp).total_seconds() if stamp.tzinfo else None
+            except (ValueError,TypeError,AttributeError):age=None
             return {"revision":revision,"pending":len(payload.get("pending",{})),"last_scan":payload.get("last_scan"),
-                "mode":payload.get("last_scan",{}).get("mode"),"durable":bool(os.getenv("CSR_RESEARCH_DATABASE_URL"))}
+                "mode":(payload.get("last_scan") or {}).get("mode"),"durable":bool(os.getenv("CSR_RESEARCH_DATABASE_URL")),
+                "last_full_scan_at":full_at,"full_scan_status":"unknown" if age is None or age<0 else "overdue" if age>4500 else "failed" if not full.get("scanned") else "partial" if full.get("errors") else "recent"}
         if operation == "publish":
             if payload.get("last_scan",{}).get("mode") != "live":
                 raise RuntimeError("shadow snapshots cannot be published to the live read view")

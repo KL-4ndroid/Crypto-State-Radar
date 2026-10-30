@@ -5,6 +5,11 @@ let syncTimer=null, syncDeadline=0, syncExpected=null;
 let lastAcceptedCheck=0;
 let renderedFreshness='';
 let nextAgeCheck=0;
+const RESUME_COALESCE_MS=5000;
+const diagnostics=new URLSearchParams(location.search).get('radarDebug')==='1'?[]:null;
+function traceUpdate(event,reason){if(diagnostics){diagnostics.push({at:new Date().toISOString(),event,reason,visibility:document.visibilityState});if(diagnostics.length>80)diagnostics.shift()}}
+if(diagnostics)window.getRadarDiagnostics=()=>diagnostics.map(row=>({...row}));
+const recentlyChecked=()=>!!currentSnapshot&&!failureCount&&Date.now()-lastAcceptedCheck<RESUME_COALESCE_MS;
 const freshnessKey=()=>app.items.map(x=>{const f=freshness(x);return`${f.usable}:${f.expired}:${f.stale}`}).join('|');
 const dashboardChannel=typeof BroadcastChannel==='function'?new BroadcastChannel('radar-dashboard-v1'):null;
 const coordinated=!!(dashboardChannel&&navigator.locks?.request);
@@ -66,11 +71,12 @@ async function publicJSON(url,etag=null){
     return{value:await response.json(),etag:response.headers.get('ETag')};
   }finally{clearTimeout(timeout)}
 }
-async function loadOnce({afterScan=false}={}){
+async function loadOnce({afterScan=false,reason='manual'}={}){
   app.loading=true;$('#refreshBtn').disabled=true;
   try{
     let changed=false;
     for(let attempt=0;attempt<2;attempt++){
+      traceUpdate('manifest-request',reason);
       const result=await publicJSON('/api/dashboard-meta'+(afterScan?'?sync=1':''),afterScan?null:metaETag);
       const meta=result.unchanged?currentMeta:result.value;
       if(!meta||meta.schema_version!==1||!meta.snapshot_id)throw new Error('版本資訊尚未發布');
@@ -101,8 +107,10 @@ async function loadOnce({afterScan=false}={}){
   }finally{app.loading=false;$('#refreshBtn').disabled=false}
 }
 async function load(options={}){
-  if(!awake())return false;
+  if(options===true)options={reason:'manual'};
+  if(!awake()){traceUpdate('paused',options.reason||'manual');return false}
   if(loadTask){
+    traceUpdate('inflight-coalesced',options.reason||'manual');
     if(options.afterScan){await loadTask;return load(options)}
     return loadTask;
   }
@@ -113,7 +121,7 @@ function scheduleRefresh(){
   clearTimeout(refreshTimer);
   if(!awake())return;
   const delay=failureCount?Math.max(Math.min(300000,15000*2**Math.min(failureCount-1,5)),retryAfter):60000;
-  refreshTimer=setTimeout(async()=>{await load();scheduleRefresh()},Math.max(jitter(delay),retryAfter));
+  refreshTimer=setTimeout(async()=>{await load({reason:failureCount?'retry':'poll'});scheduleRefresh()},Math.max(jitter(delay),retryAfter));
 }
 function stopLeader(){
   clearTimeout(refreshTimer);clearTimeout(electionTimer);
@@ -122,7 +130,7 @@ function stopLeader(){
 function elect(){
   if(!awake())return;
   if(!coordinated){
-    if(!failureCount&&Date.now()-lastAcceptedCheck>5000)load().finally(scheduleRefresh);
+    if(!failureCount&&!recentlyChecked())load({reason:'leader-acquired'}).finally(scheduleRefresh);
     else scheduleRefresh();
     return;
   }
@@ -130,7 +138,7 @@ function elect(){
     if(!lock)return;
     const released=new Promise(resolve=>{releaseLeader=resolve});
     if(!awake()){releaseLeader();return}
-    if(!failureCount&&Date.now()-lastAcceptedCheck>5000)await load();
+    if(!failureCount&&!recentlyChecked())await load({reason:'leader-acquired'});
     if(awake())scheduleRefresh();
     await released;
   }).catch(()=>{load().finally(scheduleRefresh)}).finally(()=>{
@@ -152,7 +160,14 @@ if(dashboardChannel)dashboardChannel.onmessage=event=>{
   metaETag=null;
   showMeta(message.meta,message.checkedAt);failureCount=0;retryAfter=0;updateNotice('已同步其他分頁的公開版本');
 };
-function resume(){stopLeader();clearTimeout(syncTimer);if(awake()){load().finally(elect);resumeSync()}else updateNotice(navigator.onLine===false?'離線 · 保留上次資料':'背景更新已暫停')}
+function resume(){
+  stopLeader();clearTimeout(syncTimer);
+  if(awake()){
+    if(recentlyChecked()){traceUpdate('recent-check-reused','foreground');elect()}
+    else load({reason:'foreground'}).finally(elect);
+    resumeSync();
+  }else updateNotice(navigator.onLine===false?'離線 · 保留上次資料':'背景更新已暫停');
+}
 document.addEventListener('visibilitychange',resume);window.addEventListener('online',resume);window.addEventListener('offline',resume);
 window.addEventListener('pagehide',event=>{stopLeader();clearTimeout(syncTimer);if(!event.persisted)dashboardChannel?.close()});
 window.addEventListener('pageshow',event=>{if(event.persisted)resume()});
@@ -161,7 +176,7 @@ function resumeSync(){
   if(!syncDeadline||!awake())return;
   if(currentSnapshot&&currentSnapshot.snapshot_id!==syncExpected){syncDeadline=0;updateNotice('掃描結果已同步');return}
   if(Date.now()>=syncDeadline){syncDeadline=0;updateNotice('掃描結果仍待同步 · 將按一般週期檢查');return}
-  syncTimer=setTimeout(async()=>{await load({afterScan:true});resumeSync()},5000);
+  syncTimer=setTimeout(async()=>{await load({afterScan:true,reason:'publication-retry'});resumeSync()},5000);
 }
 window.refreshRadar=options=>load(options||{});
 window.refreshRadarAge=()=>{
@@ -173,8 +188,8 @@ window.refreshRadarAge=()=>{
 window.radarSnapshotId=()=>currentSnapshot?.snapshot_id;
 window.waitForRadarPublication=async expected=>{
   syncExpected=expected??currentSnapshot?.snapshot_id;syncDeadline=Date.now()+45000;
-  await load({afterScan:true});resumeSync();
+  await load({afterScan:true,reason:'after-scan'});resumeSync();
   return !!currentSnapshot&&currentSnapshot.snapshot_id!==syncExpected;
 };
 dashboardChannel?.postMessage({type:'hello',schema:1});
-load().finally(elect);
+load({reason:'initial'}).finally(elect);

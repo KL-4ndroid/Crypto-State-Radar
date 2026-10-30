@@ -29,11 +29,15 @@ jobs:
       - name: Trigger Vercel Singapore market scan
         env:
           CSR_SCAN_TOKEN: ${{ secrets.CSR_SCAN_TOKEN }}
+          TRIGGER_KIND: ${{ github.event_name }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
         run: |
           curl \
             --fail-with-body \
             --silent \
             --show-error \
             --max-time 300 \
+            -H "X-Radar-Trigger: $TRIGGER_KIND" \
+            -H "X-Radar-Run-Id: $WORKFLOW_RUN_ID" \
             -H "Authorization: Bearer $CSR_SCAN_TOKEN" \
             https://crypto-state-radar.vercel.app/api/scan
