@@ -73,6 +73,8 @@ These thresholds are research defaults, not trading advice and can be tuned afte
 Production remains at commit `5816d3a`. The local V2.4 work is a reviewable
 checkpoint, not a production release. See [checkpoint](docs/implementation-checkpoint.md)
 for scope, acceptance evidence, remaining work, and safe continuation steps.
+See [continuation acceptance](docs/continuation-acceptance.md) for subsequent
+V2.4.1 fixes and real PostgreSQL/Redis, market and replay verification.
 
 - [Verified production baseline](docs/implementation-baseline.md)
 - [Feature/model contract](docs/model-contract.md)
@@ -86,6 +88,8 @@ a durable database. The schema must be migrated explicitly. Vercel defaults to
 shadow mode. Do not deploy this checkpoint over the live app before isolated
 PostgreSQL and preview acceptance. See `.env.example` for configuration names.
 
-The existing hourly scheduler has not been changed. The new research workflow is
-manual and disabled unless its repository enable flag and isolated URL are set.
-It does not yet provide activated automatic forward validation.
+The existing hourly full-market scheduler has not been changed. The research
+worker now has an opt-in five-minute continuation/validation tick, disabled
+unless `CSR_RESEARCH_WORKER_ENABLED=true` and its isolated URL/token are set in
+GitHub. It is not active or deployed. Full scans select at most 25 deep candidates;
+continuations can evaluate up to 100, with the same 40-second upstream deadline.

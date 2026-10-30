@@ -9,7 +9,7 @@ const rendered=spawnSync(process.env.PYTHON || 'python',['-c','from api.dashboar
 if(rendered.status!==0)throw new Error(rendered.stderr);
 const now=new Date();
 const ago=min=>new Date(now.getTime()-min*60000).toISOString();
-const state=(symbol,extra={})=>({symbol,state:'LONG_READY',direction:'LONG',updated_at:ago(1),expires_at:ago(-240),evaluation_status:'fresh',last_price:100,pump_score:70,dump_score:10,...extra});
+const state=(symbol,extra={})=>({symbol,state:'LONG_READY',direction:'LONG',updated_at:ago(1),expires_at:ago(-240),evaluation_status:'fresh',ready_price:100,last_price:100,pump_score:70,dump_score:10,...extra});
 (async()=>{
  const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL||'chrome'});
  const page=await browser.newPage({viewport:{width:1440,height:900}});
