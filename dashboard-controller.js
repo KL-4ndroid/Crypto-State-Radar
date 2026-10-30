@@ -15,6 +15,11 @@ function showMeta(meta,checkedAt=null){
   currentMeta=meta;
   const checked=Date.parse(meta.health_checked_at||'');
   const stale=!Number.isFinite(checked)||Date.now()-checked>75*60000||checked>Date.now()+60000;
+  const ageNotice=$('#dataAgeNotice');
+  if(ageNotice){
+    ageNotice.textContent=!Number.isFinite(checked)?'資料時間待確認':stale?'資料較舊，訊號需重新確認':'';
+    ageNotice.hidden=!stale;
+  }
   const market=stale?'unknown':meta.services?.market;
   $('#binanceDot').className=`status-dot ${market==='ok'?'ok':market==='partial'?'bad':''}`;
   $('#binanceValue').textContent=market==='ok'?'採集正常':market==='partial'?'資料不齊':'尚待確認';

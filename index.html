@@ -34,6 +34,7 @@ dialog{position:fixed;inset:0 0 0 auto;width:min(510px,100%);height:100dvh;max-h
 .radar-center strong{font-size:32px}.radar-center span,.radar-caption{color:var(--muted);font-size:14px}
 .radar-caption{position:static;margin-top:12px;letter-spacing:0}
 .update-status{display:flex;justify-content:space-between;gap:8px 20px;flex-wrap:wrap;margin:0 2px 18px;color:var(--muted);font-size:16px}
+.data-age-notice{color:var(--amber);font-weight:600}
 .scan-overview{margin:0 2px 24px;font-size:16px;color:var(--muted)}
 .subtitle,.hero-stat label,.hero-stat small,.section-head p,.badge,.priority-symbol small,.score-box label,.score-box b,.metric-top,.metric-foot,.toolbar-meta,th,.symbol small,.muted,.panel-foot,.drawer-head p,.detail-section-title,.detail label,.reason-box h3,.tech summary,.stage span,.mobile-meta label{color:var(--muted)}
 .hero-stat label{font-size:16px}.hero-stat small{font-size:14px}.hero-stat:nth-child(1) strong{color:var(--amber)}
@@ -66,7 +67,7 @@ th{font-size:14px}td{font-size:16px;padding:18px}.chip{font-size:15px;padding:9p
   <div class="brand"><div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 16.5 7.4 12l3.2 3.1L16.8 8 21 11.6"/><path d="M17 8h4v4"/></svg></div><div><h1>合約市場雷達</h1><div class="subtitle"><span class="live-dot">研究監控中</span><span class="hide-mobile">每小時掃描一次</span></div></div></div>
   <div class="actions"><button id="refreshBtn" class="btn" type="button" aria-label="重新整理"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 11a8 8 0 1 0-2.34 5.66"/><path d="M20 4v7h-7"/></svg><span>重新整理</span></button></div>
 </header>
-<div class="update-status"><span id="marketDataTime">市場資料時間 —</span><span id="updateNotice" role="status" aria-live="polite">正在檢查公開版本…</span></div>
+<div class="update-status"><span id="marketDataTime">市場資料時間 —</span><span id="dataAgeNotice" class="data-age-notice" role="status" aria-live="polite" hidden></span><span id="updateNotice" role="status" aria-live="polite">正在檢查公開版本…</span></div>
 <section class="hero">
   <article class="panel hero-main"><div><h2 class="hero-title">市場概況</h2></div><div class="hero-stats"><div class="hero-stat"><label>優先觀察</label><strong id="heroActive">—</strong><small>個</small></div><div class="hero-stat"><label>追蹤標的</label><strong id="heroTracked">—</strong><small>個</small></div><div class="hero-stat"><label>最近更新</label><strong id="heroUpdated">—</strong></div></div></article>
   <article class="panel hero-radar"><div class="radar"><div class="radar-center"><div><strong id="nextScanValue">--:--</strong><span>距離下次掃描</span></div></div><div class="radar-caption" id="nextScanFoot">下次整點</div></div></article>

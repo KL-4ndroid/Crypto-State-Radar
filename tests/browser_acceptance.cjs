@@ -103,6 +103,8 @@ const state=(symbol,extra={})=>({symbol,state:'LONG_READY',direction:'LONG',upda
 
   assert.equal(errors.length,0,errors.join('\n'));
   assert.equal(await page.locator('#systemDetails').evaluate(el=>el.open),false);
+  const ageWarning=await page.evaluate(()=>{const meta=currentMeta;showMeta({...meta,health_checked_at:new Date(Date.now()-120*60000).toISOString()});const text=document.querySelector('#dataAgeNotice').textContent;showMeta(meta);return text});
+  assert.match(ageWarning,/資料較舊/);
   assert.ok(await page.locator('#rows td').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize))>=16);
   const readsBeforeExpand=requests.length;
   await page.locator('#systemDetails > summary').click();
