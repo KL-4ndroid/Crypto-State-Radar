@@ -30,7 +30,7 @@ def main():
     queue='csr-'+args.environment+'-v1'
     ids={op:queue+'-'+op.replace('_','-') for op in CRONS}
     target=origin+'/api/scheduler'
-    expected=[dict(operation=op,schedule_id=ids[op],cron=cron,destination=target,queue=queue) for op,cron in CRONS.items()]
+    expected=[dict(operation=op,schedule_id=ids[op],cron=cron,destination=target,flow_key=queue) for op,cron in CRONS.items()]
     if args.command=='plan':
         print(json.dumps(dict(environment=args.environment,deliveries_per_day=600,retries=2,parallelism=1,schedules=expected),indent=2));return
     secrets=json.loads(Path(args.credentials).read_text(encoding='utf-8'))
@@ -47,34 +47,31 @@ def main():
                 headers['x-vercel-trusted-oidc-idp-token']=json.loads(raw) if raw.startswith('"') else raw
         if not headers:p.error('preview authentication token is missing')
     if args.command=='prepare':
-        if not any(q.name==queue for q in client.queue.list()):
-            client.queue.upsert(queue,parallelism=1,paused=True)
         for row in expected:
-            client.schedule.create(destination=target,cron=row['cron'],queue=queue,
+            client.schedule.create(destination=target,cron=row['cron'],flow_control={'key':queue,'parallelism':1},
                 body=json.dumps({'operation':row['operation']}),content_type='application/json',
                 method='POST',headers=headers,retries=2,timeout='55s',schedule_id=row['schedule_id'])
-        print(json.dumps({'prepared':ids,'queue':queue,'queue_paused':client.queue.get(queue).paused}));return
+            client.schedule.pause(row['schedule_id'])
+        print(json.dumps({'prepared':ids,'flow_key':queue,'paused':True}));return
     schedules={s.schedule_id:asdict(s) for s in client.schedule.list() if s.schedule_id in ids.values()}
     if args.command=='activate':
         if len(schedules)!=len(ids):p.error('prepare all three schedules first')
         for row in expected:
             actual=schedules[row['schedule_id']]
-            if actual['destination']!=target or actual['queue']!=queue or actual['cron']!=row['cron']:
+            if actual['destination']!=target or (actual['flow_control'] or {}).get('key')!=queue or (actual['flow_control'] or {}).get('parallelism')!=1 or actual['cron']!=row['cron'] or actual['queue']:
                 p.error('schedule configuration differs from the reviewed plan')
             client.schedule.resume(row['schedule_id'])
-        client.queue.resume(queue)
-        print(json.dumps({'activated':queue}));return
+        print(json.dumps({'activated':ids,'flow_key':queue}));return
     if args.command=='pause':
         for sid in schedules:client.schedule.pause(sid)
-        client.queue.pause(queue)
-        print(json.dumps({'paused':queue}));return
+        print(json.dumps({'paused':ids}));return
     if args.command=='probe':
-        result=client.message.enqueue_json(queue=queue,url=target,body={'operation':args.operation},
+        result=client.message.publish_json(flow_control={'key':queue,'parallelism':1},url=target,body={'operation':args.operation},
             headers=headers,retries=2,timeout='55s',label='csr-'+args.environment+'-probe')
         print(json.dumps(asdict(result)));return
     # Do not expose provider-stored forwarded authentication headers.
-    print(json.dumps({'queue':{k:v for k,v in asdict(client.queue.get(queue)).items() if k in {'name','parallelism','paused','lag'}},
-        'schedules':[{k:v for k,v in s.items() if k in {'schedule_id','cron','destination','queue','paused','retries','last_schedule_time','next_schedule_time','last_schedule_states'}} for s in schedules.values()]},indent=2))
+    print(json.dumps({'flow_key':queue,
+        'schedules':[{k:v for k,v in s.items() if k in {'schedule_id','cron','destination','flow_control','paused','retries','last_schedule_time','next_schedule_time','last_schedule_states'}} for s in schedules.values()]},indent=2,default=lambda value:value.value))
 
 
 if __name__=='__main__':
