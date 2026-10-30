@@ -140,6 +140,11 @@ class ResearchJournal:
         row = self.sql("SELECT payload FROM csr_records WHERE kind=? AND record_key=?",(kind,key)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def append_scheduler_receipt(self, row):
+        # Operational evidence is append-only and does not advance model state.
+        with self.transaction():
+            self._insert("scheduler_receipts",str(uuid4()),row)
+
     def due_jobs(self, now, limit=20):
         stamp=utc(now).isoformat()
         return self.sql("SELECT signal_id,horizon FROM csr_validation_jobs WHERE status='pending' AND due_at<=? AND (next_attempt_at IS NULL OR next_attempt_at<=?) ORDER BY COALESCE(next_attempt_at,due_at),signal_id,horizon LIMIT ?",(stamp,stamp,limit)).fetchall()

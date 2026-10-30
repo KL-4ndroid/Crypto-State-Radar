@@ -1,5 +1,7 @@
 # Dashboard 資源優化：實作與驗收紀錄
 
+> 以下是當時的 preview 實作證據，後續已正式上線。最新狀態與未完成關卡見 [目前狀態](current-status.md)。
+
 日期：2026-10-30。對照 [原計畫](dashboard-resource-optimization-plan.md)。
 
 本輪只部署隔離 preview；未新增 commit、未 push、未合併 main，未切換 production。

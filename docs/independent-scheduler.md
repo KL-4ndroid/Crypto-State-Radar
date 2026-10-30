@@ -1,5 +1,7 @@
 # Upstash 獨立排程
 
+目前狀態與 24 小時驗收見 [狀態入口](current-status.md)，幣安實際請求頻率見 [資料採集頻率](data-collection-cadence.md)。
+
 沿用既有 Vercel / Upstash 安裝，Redis 繼續儲存 current snapshot；新增同帳號 Free QStash，負責傳送簽章請求。未改模型、人工掃描密鑰或資料庫 schema。
 
 | 工作 | UTC 排程 | 每日基本訊息 |
@@ -44,6 +46,6 @@
 - Preview 17:53 drain、17:54 validate：真正 QStash schedule 送達，兩者 HTTP 200；pending 497 → 397。測試完成後三個 preview schedules 均已暫停。
 - Production 17:58 drain：`csr-production-v1-drain`，message `msg_7YoJxFpwkEy6sUx63hfqgCG16oBDUsWDszMDAWMkdMur5XurXUcS3`，HTTP 200。revision 7 → 8，100 個深入分析、錯誤 0；last_full_scan_at 正確保留 16:52 的時間。
 - Production 17:59 validate：`csr-production-v1-validate`，message `msg_7YoJxFpwkEy6sUx5aWfJKGi6W7SQfHvNZR3f5GGjSZ6o5EMR3fUJ4`，HTTP 200。
-- 下一個 full scan 排程為 18:07；其整輪驗收結果記錄於上線 PR，不能用上述 probe 當成 hourly cron 的證據。
+- Production 18:07 的 full scan 已真正自動觸發，約 11 秒送達成功，522 個 observations、25 個深入分析、錯誤 0、revision 10；19:07 與 20:07 也已成功。完整切換證據見 [PR #17](https://github.com/KL-4ndroid/Crypto-State-Radar/pull/17)。
 
 簽章、目標 URL、期限、body 竄改、金鑰輪替、環境隔離、持久化去重、發布恢復與延後發布重試均有針對性測試。

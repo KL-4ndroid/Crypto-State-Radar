@@ -1,7 +1,7 @@
 # Dashboard 資源與使用體驗優化實作計畫
 
 日期：2026-10-30
-狀態：核心 P0–P3 已實作並完成隔離 preview 驗證；正式部署與完整日用量量測尚未進行
+狀態：核心 P0–P3 已正式上線；完整日用量與長期驗收進行中，見 [目前狀態](current-status.md)
 用途：設計與驗收依據；目前成果、重用項目與剩餘關卡見 [實作與驗收紀錄](dashboard-resource-optimization-implementation.md)
 
 ## 1. 目標與範圍

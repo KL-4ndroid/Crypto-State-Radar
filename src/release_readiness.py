@@ -4,12 +4,17 @@ import json
 from urllib.parse import urlparse
 
 
+def https_origin(value):
+    url=urlparse(value or "")
+    return url.scheme=="https" and bool(url.hostname) and not url.username and not url.password and url.path in {"","/"} and not url.query and not url.fragment
+
+
 def configuration_checks(environment,stage="preview"):
     scan=environment.get("CSR_SCAN_TOKEN","")
     worker=environment.get("CSR_WORKER_TOKEN","")
     key=environment.get("CSR_STATE_KEY","")
     url=urlparse(environment.get("CSR_RESEARCH_WORKER_URL",""))
-    return {
+    checks = {
         "database_configured":bool(environment.get("CSR_RESEARCH_DATABASE_URL")),
         "database_environment_matches":environment.get("CSR_RESEARCH_ENVIRONMENT")==stage,
         "scan_token_configured":bool(scan),
@@ -17,14 +22,27 @@ def configuration_checks(environment,stage="preview"):
         "state_store_configured":bool(environment.get("KV_REST_API_URL") and environment.get("KV_REST_API_TOKEN")),
         "preview_state_key_isolated":stage!="preview" or bool(key and key!="crypto-state-radar:state:v1"),
         "scan_mode_explicit":environment.get("CSR_SCAN_MODE") in {"live","shadow"},
-        "worker_url_https":url.scheme=="https" and bool(url.hostname) and not url.username and not url.password and not url.query and not url.fragment,
     }
+    if environment.get("CSR_SCHEDULER_ENABLED") is not None or environment.get("QSTASH_CURRENT_SIGNING_KEY"):
+        current=environment.get("QSTASH_CURRENT_SIGNING_KEY","")
+        next_key=environment.get("QSTASH_NEXT_SIGNING_KEY","")
+        origin=environment.get("CSR_SCHEDULER_ORIGIN") or ("https://"+environment["VERCEL_URL"] if environment.get("VERCEL_URL") else "")
+        checks.update(scheduler_enabled=environment.get("CSR_SCHEDULER_ENABLED")=="true",
+            qstash_signing_keys_configured=bool(current and next_key and current!=next_key and "[SENSITIVE]" not in current+next_key),
+            scheduler_origin_https=https_origin(origin),
+            production_scheduler_origin_matches=stage!="production" or origin.rstrip("/")=="https://crypto-state-radar.vercel.app")
+    else:
+        checks["worker_url_https"]=url.scheme=="https" and bool(url.hostname) and not url.username and not url.password and not url.query and not url.fragment
+    return checks
 
 
 def inspect(stage="preview",connections=False):
     checks=configuration_checks(os.environ,stage)
     report={"stage":stage,"checks":checks,"configuration_ready":all(checks.values()),"connection_checks":"not_requested",
-        "deploys_or_migrates":False,"production_ready":False}
+        "deploys_or_migrates":False,"production_ready":None,
+        "assessment_scope":"configuration_and_database_privileges_only",
+        "scheduler_source":"qstash" if "scheduler_enabled" in checks else "manual_or_legacy_worker",
+        "operational_acceptance":"not_assessed","model_effectiveness":"not_assessed"}
     if connections and checks["database_configured"] and checks["database_environment_matches"]:
         try:
             import psycopg
@@ -42,7 +60,7 @@ def inspect(stage="preview",connections=False):
         except Exception as exc:
             # Never include exception messages, DSNs, tokens or environment values.
             report["connection_checks"]={"error_type":type(exc).__name__}
-    report["remaining_gates"]=["Vercel sin1 preview throughput","isolated live/shadow comparison","representative historical event evaluation","reviewed production switch and rollback"]
+    report["remaining_gates"]=["24-hour operational acceptance","representative historical and mature forward evaluation","recorded restore and rollback drill"]
     return report
 
 

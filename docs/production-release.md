@@ -1,5 +1,7 @@
 # V2.4.1-alpha 與 Dashboard 正式發布清單
 
+> 這是先前發布的準備紀錄，production 已完成切換。現況見 [目前狀態](current-status.md)；排程與回退請先看 [QStash 文件](independent-scheduler.md)，不要在 QStash 啟用時直接恢復下列歷史 GitHub cron 步驟。
+
 2026-10-30；使用者已授權完成後 commit、push、合併 main。
 此文件記錄合併前準備；最終合併 SHA、CI 與部署結果以 GitHub PR／Vercel deployment 記錄為準。
 
