@@ -184,3 +184,43 @@ def test_postgres_outbox_and_real_redis_atomic_publication(postgres,monkeypatch)
     finally:
         redis_command("DEL",key,key+":dashboard-meta",key+":dashboard-latest",key+":legacy",key+":legacy:dashboard-meta",key+":legacy:dashboard-latest")
         server.shutdown();server.server_close();thread.join(timeout=5)
+
+
+def test_v33_postgres_namespace_concurrency_and_immutable_results(postgres):
+    from src.v33.journal import ContractStore
+    from src.v33.registry import defaults
+    from src.v33.contracts import RawObservation,Feature,stamp
+    open_store,admin,psycopg=postgres
+    from psycopg import sql
+    migration=(Path(__file__).resolve().parents[1]/'schema/v33_contract.sql').read_text(encoding='utf-8')
+    for _ in range(2):
+        with admin.transaction():admin.execute(migration)
+    # The fixture runtime role is explicit; retain its restricted privileges.
+    a,b=open_store(),open_store()
+    runtime_role=a.db.execute('SELECT current_user').fetchone()[0]
+    for table in ('csr_v33_features','csr_v33_evaluations','csr_v33_events','csr_v33_heads'):
+        admin.execute(sql.SQL('GRANT SELECT,INSERT ON {} TO {}').format(sql.Identifier(table),sql.Identifier(runtime_role)))
+    admin.execute(sql.SQL('GRANT UPDATE(revision,last_time,payload) ON csr_v33_heads TO {}').format(sql.Identifier(runtime_role)))
+    stores=[ContractStore(a,'REPLAY','postgres'),ContractStore(b,'REPLAY','postgres')]
+    policy=defaults();stores[0].put_rule(policy)
+    now=datetime(2026,10,30,tzinfo=timezone.utc)
+    raw=stores[0].put_raw(RawObservation('fixture','A',stamp(now),stamp(now),stamp(now),stamp(now),'1',{}))
+    feature=stores[0].put_feature(Feature('probe','1','A',stamp(now),stamp(now),stamp(now),1,(raw,)))
+    def evaluate(store):return store.evaluate('A',now,policy['rule_version'],[feature])
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first,second=list(executor.map(evaluate,stores))
+    assert first==second and first['revision']==1
+    assert admin.execute('SELECT COUNT(*) FROM csr_v33_evaluations').fetchone()[0]==1
+    assert a.load()[0]==0
+    for minutes in (5,10):
+        when=now+timedelta(minutes=minutes)
+        values={'return_7d':100,'quote_volume_24h':1000,'quote_volume_median_30d':100,'bar_5m':stamp(when)}
+        raw=stores[0].put_raw(RawObservation('fixture','A',stamp(when),stamp(when),stamp(when),stamp(when),'1',values))
+        ids=[stores[0].put_feature(Feature(name,'1','A',stamp(when),stamp(when),stamp(when),value,(raw,))) for name,value in values.items()]
+        last=stores[0].evaluate('A',when,policy['rule_version'],ids)
+    assert last['phase']=='PUMP' and last['events'][0]['event_type']=='PHASE_PUMP'
+    for table in ('csr_v33_features','csr_v33_evaluations','csr_v33_events'):
+        with pytest.raises(psycopg.Error):
+            with admin.transaction():admin.execute(sql.SQL('UPDATE {} SET payload=%s').format(sql.Identifier(table)),('{}',))
+    other=ContractStore(a,'BACKTEST','different')
+    with pytest.raises(ValueError):other.evaluate('A',now,policy['rule_version'],[feature])
