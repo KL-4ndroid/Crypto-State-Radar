@@ -44,7 +44,7 @@ def _enrichment_candidates(snapshots, previous, now):
     return plan_scan(snapshots, previous, {}, now, ENRICHMENT_LIMIT)[0]
 
 
-def run(symbols=None, root="data/journal", drain=False):
+def run(symbols=None, root="data/journal", drain=False, operation_id=None):
     started_at, started = datetime.now(timezone.utc), time.monotonic()
     budget = RequestBudget()
     token = CURRENT.set(budget)
@@ -52,6 +52,10 @@ def run(symbols=None, root="data/journal", drain=False):
     try:
         journal = open_journal(root)
         revision, saved = journal.load()
+        if operation_id:
+            receipt = journal.record("scheduler_operations", operation_id)
+            if receipt is not None:
+                return dict(receipt, deduplicated=True)
         lifecycle = state_store_from_env(load=saved.get("states") is None)
         mode = os.getenv("CSR_SCAN_MODE", "shadow" if os.getenv("VERCEL") else "live")
         if mode not in {"live", "shadow"}:
@@ -155,6 +159,10 @@ def run(symbols=None, root="data/journal", drain=False):
                 states[symbol] = defer_state(previous[symbol],now,"awaiting_deep_scan")
         summary.update(pending=len(queue),request_metrics=budget.report(),processed_at=datetime.now(timezone.utc).isoformat())
         records.append(("runs",run_id,summary.copy()))
+        if operation_id:
+            # Receipt and state commit atomically. Lost HTTP responses must not
+            # create a second scan or duplicate signals when delivery retries.
+            records.append(("scheduler_operations",operation_id,dict(summary,revision=revision+1)))
         # Continuations must not make a missed full-market scan look fresh.
         previous_full=saved.get("last_full_scan")
         if previous_full is None and saved.get("last_scan") and not saved["last_scan"].get("drain",True):
