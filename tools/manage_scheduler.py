@@ -3,11 +3,13 @@ import argparse
 from dataclasses import asdict
 import json
 from pathlib import Path
+import sys
 from urllib.parse import urlparse
 
 from qstash import QStash
 
-CRONS = {"full_scan":"7 * * * *", "drain":"3-58/5 * * * *", "validate":"4-59/5 * * * *"}
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from src.scheduler_contract import CRONS
 
 
 def main():

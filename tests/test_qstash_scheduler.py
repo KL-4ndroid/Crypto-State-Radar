@@ -16,6 +16,11 @@ NEXT = 'test-next-key-01234567890123456789012'
 URL = 'https://isolated.example/api/scheduler'
 
 
+@pytest.fixture(autouse=True)
+def no_external_telemetry(monkeypatch):
+    monkeypatch.setattr(scheduled_tasks,'persist_receipt',lambda receipt:None)
+
+
 def signed(body, key=CURRENT, **claims):
     data = dict(iss='Upstash',sub=URL,nbf=int(time.time())-1,exp=int(time.time())+60,
         body=base64.urlsafe_b64encode(hashlib.sha256(body).digest()).decode().rstrip('='))
@@ -88,6 +93,7 @@ def test_replay_recovers_publication_and_redacts_payload(monkeypatch,capsys):
     result=scheduled_tasks.execute('full_scan','msg_test',True)
     assert calls==['publish'] and result['snapshot_published']
     assert result['trigger']=='qstash_schedule'
+    assert result['request_metrics']['requests']==0
     assert 'private-dsn' not in json.dumps(result)+capsys.readouterr().out
     assert 'secret-market-payload' not in json.dumps(result)
 
@@ -100,3 +106,37 @@ def test_failed_publication_defers_to_next_delivery(monkeypatch):
     monkeypatch.setattr(scheduled_tasks,'run',lambda **kw:{'mode':'live','snapshot_published':False})
     monkeypatch.setattr(scheduled_tasks,'work',lambda *args,**kw:pytest.fail('outbox belongs to next delivery'))
     with pytest.raises(RuntimeError):scheduled_tasks.execute('full_scan','msg_test')
+
+
+def test_validation_receipts_are_durable_without_advancing_revision(monkeypatch,tmp_path):
+    from types import SimpleNamespace
+    monkeypatch.setenv('CSR_SCHEDULER_ENABLED','true')
+    monkeypatch.setenv('VERCEL_ENV','production')
+    monkeypatch.setenv('CSR_RESEARCH_ENVIRONMENT','production')
+    monkeypatch.setenv('CSR_RESEARCH_DATABASE_URL','private-dsn')
+    store=ResearchJournal(tmp_path/'receipts.sqlite3')
+    monkeypatch.setattr(scheduled_tasks,'work',lambda *args,**kw:{'validated':[{'private':'secret-outcome'}],
+        'checked_jobs':2,'errors':[{'private':'secret-error'}],
+        'request_metrics':{'requests':3,'failed_requests':1,'request_seconds':0.1,'private':'secret-token'}})
+    monkeypatch.setattr(scheduled_tasks,'persist_receipt',lambda row:store.append_scheduler_receipt(row))
+    result=scheduled_tasks.execute('validate','msg_telemetry',True)
+    stored=store.read('scheduler_receipts')
+    assert result['telemetry_persisted'] and len(stored)==1
+    assert stored[0]['validated_count']==1 and stored[0]['errors_count']==1
+    assert stored[0]['request_metrics']['requests']==3
+    assert 'secret-' not in json.dumps(stored)
+    assert store.load()[0]==0
+    store.close()
+
+
+def test_telemetry_failure_does_not_retry_successful_work(monkeypatch,capsys):
+    monkeypatch.setenv('CSR_SCHEDULER_ENABLED','true')
+    monkeypatch.setenv('VERCEL_ENV','production')
+    monkeypatch.setenv('CSR_RESEARCH_ENVIRONMENT','production')
+    monkeypatch.setenv('CSR_RESEARCH_DATABASE_URL','private-dsn')
+    monkeypatch.setattr(scheduled_tasks,'work',lambda *args,**kw:{'status':'idle','mode':'live'})
+    def fail(row):raise RuntimeError('secret-dsn')
+    monkeypatch.setattr(scheduled_tasks,'persist_receipt',fail)
+    result=scheduled_tasks.execute('validate','msg_telemetry')
+    assert result['success'] and not result['telemetry_persisted']
+    assert 'secret-dsn' not in capsys.readouterr().out

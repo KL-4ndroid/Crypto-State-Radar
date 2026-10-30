@@ -1,5 +1,7 @@
 # Checkpoint 4f50dd3 後續驗收 — 2026-10-30
 
+> 歷史驗收紀錄；其中「尚未上線／未建立資料庫」是當時狀態。現況與剩餘工作見 [目前狀態](current-status.md)。
+
 > 下列為建立雲端資源前的 checkpoint 紀錄。後續 Neon preview、pooler 修正、
 > Dashboard 共用發布／快取及 sin1 實測進度，見
 > [Dashboard 實作與驗收](dashboard-resource-optimization-implementation.md)。production 尚未切換。
