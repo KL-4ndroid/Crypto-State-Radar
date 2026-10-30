@@ -18,7 +18,7 @@
 - 一個環境使用獨立 Flow Control key，parallelism=1，避免三種排程互相碰撞。人工觸發仍沿用 revision CAS 保護。依官方建議使用 publish 的並行限制；不依賴 FIFO queue 的暫停／恢復。
 - 每則訊息最多重試 2 次，HTTP timeout 55 秒；既有採集預算 40 秒、函式上限 60 秒保留。
 - QStash message ID 與 operation 組成穩定操作 ID。掃描 receipt 與 lifecycle/signal 在同一筆交易提交；回應遺失後重送不重新採集、不新增 revision 或重複 signal。
-- 掃描提交但發布失敗時，重試只重播 current snapshot outbox；idle drain 也會恢復未發布快照。不將多個 40 秒工作塞在同一個請求中。
+- 掃描提交但發布失敗時，當次回傳可重試失敗；下一次 delivery 只重播 current snapshot outbox，不在已做完採集的請求內再次等待發布。idle drain 也會恢復未發布快照。不將多個 40 秒工作塞在同一個請求中。
 - Provider 與操作 log 只收到數量、revision、時間及錯誤類別，不傳完整行情、signal 或密鑰。
 
 ## 管理與切換
@@ -38,4 +38,12 @@
 
 ## 驗收紀錄
 
-切換前補入 preview / production 的實際 schedule 訊息、操作 revision 與完整掃描時間。手動 probe 只能證明傳送鏈路，不能代替真正 cron 觸發的證據。
+2026-10-30 台灣時間：
+
+- Preview 17:50 完整掃描 probe：522 個基本觀察、25 個深入分析、零錯誤，revision 3。17:53 同一訊息重送回傳 deduplicated，revision 維持當時的 4，沒有再次採集。
+- Preview 17:53 drain、17:54 validate：真正 QStash schedule 送達，兩者 HTTP 200；pending 497 → 397。測試完成後三個 preview schedules 均已暫停。
+- Production 17:58 drain：`csr-production-v1-drain`，message `msg_7YoJxFpwkEy6sUx63hfqgCG16oBDUsWDszMDAWMkdMur5XurXUcS3`，HTTP 200。revision 7 → 8，100 個深入分析、錯誤 0；last_full_scan_at 正確保留 16:52 的時間。
+- Production 17:59 validate：`csr-production-v1-validate`，message `msg_7YoJxFpwkEy6sUx5aWfJKGi6W7SQfHvNZR3f5GGjSZ6o5EMR3fUJ4`，HTTP 200。
+- 下一個 full scan 排程為 18:07；其整輪驗收結果記錄於上線 PR，不能用上述 probe 當成 hourly cron 的證據。
+
+簽章、目標 URL、期限、body 竄改、金鑰輪替、環境隔離、持久化去重、發布恢復與延後發布重試均有針對性測試。
