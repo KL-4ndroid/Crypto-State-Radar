@@ -101,3 +101,11 @@ unless `CSR_RESEARCH_WORKER_ENABLED=true` and its isolated URL/token are set in
 GitHub. Activation is an explicit release step after the production API is verified.
 Full scans select at most 25 deep candidates;
 continuations can evaluate up to 100, with the same 40-second upstream deadline.
+
+## Dashboard readability
+
+Primary market text uses 16–18px type with larger symbols and counts. The overview,
+priority signals, evaluation times, pending work and data warnings remain visible.
+Operational metrics and lifecycle explanations are collapsed under “掃描進度與系統資訊”.
+The main table shows symbol/direction, state, pump/dump pressure and evaluation time;
+select a symbol for OI, funding, reasons and additional time/anchor records.

@@ -102,8 +102,22 @@ const state=(symbol,extra={})=>({symbol,state:'LONG_READY',direction:'LONG',upda
   await page.locator('#search').fill('');
 
   assert.equal(errors.length,0,errors.join('\n'));
+  assert.equal(await page.locator('#systemDetails').evaluate(el=>el.open),false);
+  const ageWarning=await page.evaluate(()=>{const meta=currentMeta;showMeta({...meta,health_checked_at:new Date(Date.now()-120*60000).toISOString()});const text=document.querySelector('#dataAgeNotice').textContent;showMeta(meta);return text});
+  assert.match(ageWarning,/資料較舊/);
+  assert.ok(await page.locator('#rows td').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize))>=16);
+  const readsBeforeExpand=requests.length;
+  await page.locator('#systemDetails > summary').click();
+  assert.equal(await page.locator('#systemDetails').evaluate(el=>el.open),true);
+  assert.equal(requests.length,readsBeforeExpand);
+  await page.locator('#systemDetails > summary').click();
+  await page.evaluate(()=>{const states={...currentSnapshot.states};for(let i=1;i<=5;i++)states['FOCUS'+i+'USDT']={...states.A,symbol:'FOCUS'+i+'USDT'};applySnapshot({...currentSnapshot,states})});
   const dir=path.join(root,'artifacts','verification');fs.mkdirSync(dir,{recursive:true});
+  await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
   await page.screenshot({path:path.join(dir,'dashboard-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:1280,height:800});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:path.join(dir,'dashboard-laptop.png')});
   await page.setViewportSize({width:390,height:844});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.locator('.mobile-card[data-symbol="A"]').click();
@@ -142,7 +156,7 @@ const state=(symbol,extra={})=>({symbol,state:'LONG_READY',direction:'LONG',upda
   await lifecycle.waitForFunction(()=>!loadTask);
   assert.equal(count(),beforeRestore+1);
   await fallbackContext.close();
-  fs.writeFileSync(path.join(dir,'browser-result.json'),JSON.stringify({desktop:'1440x900',mobile:'390x844',stateCalls,scanCalls,pageErrors:errors,manualRefreshRace:'passed',unchangedDownloads:0,healthRequests:0,failedRead:'retained',multiTab:'broadcast and leader handoff passed',hidden:'no periodic requests for 121 seconds',offline:'paused and resumed',retryAfter:'20 seconds respected',fallback:'independent polling without Web Locks',expiredReady:'excluded',tokenPersistence:'none'},null,2));
+  fs.writeFileSync(path.join(dir,'browser-result.json'),JSON.stringify({desktop:'1440x900',mobile:'390x844',stateCalls,scanCalls,pageErrors:errors,readability:'16px primary table text; auxiliary information collapsed',laptop:'1280x800',manualRefreshRace:'passed',unchangedDownloads:0,healthRequests:0,failedRead:'retained',multiTab:'broadcast and leader handoff passed',hidden:'no periodic requests for 121 seconds',offline:'paused and resumed',retryAfter:'20 seconds respected',fallback:'independent polling without Web Locks',expiredReady:'excluded',tokenPersistence:'none'},null,2));
   console.log('Browser acceptance passed: desktop/mobile, freshness, manual-refresh race, token clearing.');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});
