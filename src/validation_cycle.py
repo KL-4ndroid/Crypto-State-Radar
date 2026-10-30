@@ -77,12 +77,18 @@ def run_validation_cycle(store: JsonlResearchStore | None = None,
     errors: list[dict[str, str]] = []
 
     # Durable jobs are selected by indexed due time; legacy JSONL remains a local adapter.
-    jobs = store.due_jobs(now, limit=20) if hasattr(store, "due_jobs") else [
-        (signal_id(signal), h) for signal in signals for h in HORIZONS]
+    if hasattr(store,"claim_due_jobs"):
+        jobs=store.claim_due_jobs(now,limit=20)
+    elif hasattr(store,"due_jobs"):
+        jobs=[(sid,h,None) for sid,h in store.due_jobs(now,limit=20)]
+    else:
+        jobs=[(signal_id(signal),h,None) for signal in signals for h in HORIZONS]
     lookup = {signal_id(signal): signal for signal in signals}
-    for sid, horizon in jobs:
+    for sid, horizon, lease_token in jobs:
         signal = store.signal(sid) if hasattr(store, "signal") else lookup.get(sid)
         if not signal:
+            if hasattr(store,"finish_validation"):
+                store.finish_validation(sid,horizon,error="missing_signal",lease_token=lease_token)
             continue
         symbol = str(signal.get("symbol", ""))
         direction = str(signal.get("direction", "NEUTRAL"))
@@ -96,25 +102,27 @@ def run_validation_cycle(store: JsonlResearchStore | None = None,
             result = validate(sid,start,entry,candles,horizon,direction)
             if result is None:
                 if hasattr(store,"finish_validation"):
-                    store.finish_validation(sid,horizon,error="insufficient_or_invalid_candles")
+                    store.finish_validation(sid,horizon,error="insufficient_or_invalid_candles",lease_token=lease_token)
                 continue
             row = result.to_dict()
             row.update(symbol=symbol,signal_time=start.isoformat(),signal_state=signal.get("state"),
                 direction=direction,model_version=signal.get("model_version"),pump_score=signal.get("pump_score"),dump_score=signal.get("dump_score"))
             if hasattr(store,"finish_validation"):
-                store.finish_validation(sid,horizon,row=row)
+                if not store.finish_validation(sid,horizon,row=row,lease_token=lease_token):
+                    continue
             else:
                 store.append_validation(row)
             completed.add((sid,horizon))
             written.append(row)
         except Exception as exc:
             if hasattr(store,"finish_validation"):
-                store.finish_validation(sid,horizon,error=type(exc).__name__)
+                store.finish_validation(sid,horizon,error=type(exc).__name__,lease_token=lease_token)
             errors.append({"symbol":symbol,"horizon":horizon,"error":type(exc).__name__})
 
     return {
         "checked_at": now.isoformat(),
-        "signals": len(signals),
+        "signals": len({sid for sid,_,_ in jobs}),
+        "checked_jobs": len(jobs),
         "new_validations": len(written),
         "validated": written,
         "errors": errors[:50],

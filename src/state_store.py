@@ -68,6 +68,8 @@ class FileStateStore:
             with _FILE_PUBLICATION_LOCK:
                 lock.execute("BEGIN EXCLUSIVE")
                 current = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+                if current.get("ledger_id") and current["ledger_id"]!=payload.get("ledger_id"):
+                    raise RuntimeError("read view belongs to another research ledger")
                 if current.get("revision",0) > payload["revision"]:
                     return False
                 temporary = self.path.with_suffix(".tmp")
@@ -138,12 +140,12 @@ class UpstashRestStateStore:
     snapshot size is not constrained by URL-length limits.
     """
 
-    def __init__(self, base_url: str, token: str, key: str = DEFAULT_STATE_KEY, timeout: float = 10.0) -> None:
+    def __init__(self, base_url: str, token: str, key: str = DEFAULT_STATE_KEY, timeout: float = 10.0, load: bool = True) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.key = key
         self.timeout = timeout
-        self.states = self._load()
+        self.states = self._load() if load else {}
 
     def _command(self, *parts: object) -> object:
         body = json.dumps([str(part) for part in parts], separators=(",", ":")).encode("utf-8")
@@ -198,13 +200,15 @@ class UpstashRestStateStore:
     def publish_snapshot(self, payload: dict) -> bool:
         # Outbox replay can race newer commits; compare and write atomically.
         script = """local raw=redis.call('GET',KEYS[1]); local rev=0;
-        if raw then local old=cjson.decode(raw); rev=tonumber(old.revision or 0) end;
+        if raw then local old=cjson.decode(raw); rev=tonumber(old.revision or 0);
+        local incoming=cjson.decode(ARGV[2]);
+        if old.ledger_id and old.ledger_id~=incoming.ledger_id then return redis.error_reply('ledger identity mismatch') end end;
         if rev>tonumber(ARGV[1]) then return 0 end;
         redis.call('SET',KEYS[1],ARGV[2]); return 1"""
         return self._command("EVAL",script,1,self.key,payload["revision"],json.dumps(payload,ensure_ascii=False,separators=(",",":"))) == 1
 
 
-def state_store_from_env() -> StateStore:
+def state_store_from_env(load: bool = True) -> StateStore:
     """Select durable persistence without coupling scanner logic to one host."""
     upstash_url = os.getenv("KV_REST_API_URL")
     upstash_token = os.getenv("KV_REST_API_TOKEN")
@@ -213,6 +217,7 @@ def state_store_from_env() -> StateStore:
             upstash_url,
             upstash_token,
             key=os.getenv("CSR_STATE_KEY", DEFAULT_STATE_KEY),
+            load=load,
         )
 
     url = os.getenv("CSR_STATE_STORE_URL")

@@ -15,7 +15,8 @@ try:
     from .state_machine import SymbolState, transition, defer_state, encode_snapshot, decode_snapshot
     from .state_store import state_store_from_env
     from .research_journal import open_journal
-    from .scan_plan import plan_scan
+    from .scan_plan import plan_scan, drain_candidates
+    from .retry_policy import retry_at
     from .request_budget import CURRENT, RequestBudget
 except ImportError:
     from live_collector import collect_market
@@ -25,13 +26,15 @@ except ImportError:
     from state_machine import SymbolState, transition, defer_state, encode_snapshot, decode_snapshot
     from state_store import state_store_from_env
     from research_journal import open_journal
-    from scan_plan import plan_scan
+    from scan_plan import plan_scan, drain_candidates
+    from retry_policy import retry_at
     from request_budget import CURRENT, RequestBudget
 
 PRIORITY = {"EVAAUSDT", "ONUSDT", "PREDICTUSDT"}
 SIGNAL_STATES = {"EARLY_WARNING", "PUMP_PRESSURE", "DUMP_PRESSURE", "LONG_READY", "SHORT_READY"}
 NOTIFY_STATES = {"LONG_READY", "SHORT_READY", "TRIGGERED", "INVALIDATED", "EXPIRED"}
 ENRICHMENT_LIMIT = 25
+DRAIN_LIMIT = 100
 ENRICHMENT_WORKERS = 8
 _safe_float = number
 _features = snapshot_features
@@ -49,22 +52,25 @@ def run(symbols=None, root="data/journal", drain=False):
     try:
         journal = open_journal(root)
         revision, saved = journal.load()
-        lifecycle = state_store_from_env()
+        lifecycle = state_store_from_env(load=saved.get("states") is None)
         mode = os.getenv("CSR_SCAN_MODE", "shadow" if os.getenv("VERCEL") else "live")
         if mode not in {"live", "shadow"}:
             raise ValueError("CSR_SCAN_MODE must be live or shadow")
-        if os.getenv("VERCEL_ENV") not in {None,"production"} and mode=="live" and not os.getenv("CSR_STATE_KEY"):
+        if os.getenv("VERCEL_ENV") not in {None,"production"} and mode=="live" and os.getenv("CSR_STATE_KEY","") in {"","crypto-state-radar:state:v1"}:
             raise RuntimeError("preview publication requires an isolated CSR_STATE_KEY")
         previous = decode_snapshot(saved) if saved.get("states") is not None else lifecycle.all()
         queue = saved.get("pending", {})
+        capacity=DRAIN_LIMIT if drain else ENRICHMENT_LIMIT
         if drain:
             # A bounded continuation avoids fetching full-market OI a second time.
-            symbols = sorted(queue, key=lambda s:(queue[s].get("last_attempt", ""), queue[s]["due_since"],s))[:ENRICHMENT_LIMIT]
+            symbols,queue = drain_candidates(previous,queue,datetime.now(timezone.utc),capacity)
             if not symbols:
-                return {"mode":mode,"status":"idle","pending":0,"completed_at":datetime.now(timezone.utc).isoformat()}
+                retry_times=[item["next_attempt_at"] for item in queue.values() if item.get("next_attempt_at")]
+                return {"mode":mode,"status":"waiting" if queue else "idle","pending":len(queue),
+                    "next_retry_at":min(retry_times) if retry_times else None,"completed_at":datetime.now(timezone.utc).isoformat()}
         snapshots = collect_market(symbols=symbols)
         collected_at = datetime.now(timezone.utc)
-        candidates, queue, overdue = plan_scan(snapshots,previous,queue,collected_at,ENRICHMENT_LIMIT)
+        candidates, queue, overdue = plan_scan(snapshots,previous,queue,collected_at,capacity)
         def enrich(snap):
             CURRENT.set(budget)
             try:
@@ -80,6 +86,7 @@ def run(symbols=None, root="data/journal", drain=False):
         run_id = str(uuid4())
         records = [("models",MODEL_VERSION,model_manifest())]
         summary = {"run_id":run_id,"mode":mode,"model_version":MODEL_VERSION,"started_at":started_at.isoformat(),
+            "scan_policy":"scan-v2-fair-retry","capacity":capacity,"drain":drain,
             "collected_at":collected_at.isoformat(),"observed_at":now.isoformat(),"evaluated_at":now.isoformat(),
             "scanned":0,"errors":0,"signals":0,"transitions":0,"priority":[],"notifications":[],
             "enrichment_selected":len(candidates),"enrichment_succeeded":0,"enrichment_errors":0,
@@ -105,6 +112,8 @@ def run(symbols=None, root="data/journal", drain=False):
             queue.setdefault(symbol,{"due_since":now.isoformat(),"reason":"retry"})
             queue[symbol]["last_attempt"] = now.isoformat()
             if error:
+                attempts=queue[symbol].get("attempts",0)+1
+                queue[symbol].update(attempts=attempts,next_attempt_at=retry_at(now,attempts,symbol),last_error=error)
                 states[symbol] = defer_state(old,now,error)
                 summary["enrichment_errors"] += int(symbol in enriched)
                 summary["enrichment_failures"].append({"symbol":symbol,"reason":error})
@@ -115,6 +124,14 @@ def run(symbols=None, root="data/journal", drain=False):
             decision = classify(symbol,features,now=now).to_dict()
             state,event = transition(old,decision,now)
             states[symbol] = state
+            if state.evaluation_status=="pending":
+                reason=state.pending_reason or "state_requires_review"
+                attempts=queue[symbol].get("attempts",0)+1
+                queue[symbol].update(attempts=attempts,next_attempt_at=retry_at(now,attempts,symbol),last_error=reason)
+                summary["enrichment_errors"]+=1
+                summary["enrichment_failures"].append({"symbol":symbol,"reason":reason})
+                records.append(("evaluations",run_id+":"+symbol,dict(decision,run_id=run_id,status="pending",reason=reason)))
+                continue
             queue.pop(symbol,None)
             summary["enrichment_succeeded"] += 1
             records.append(("evaluations",run_id+":"+symbol,dict(decision,run_id=run_id,status=state.evaluation_status)))

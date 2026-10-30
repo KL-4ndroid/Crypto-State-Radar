@@ -38,7 +38,7 @@ def work(operation, root="data/journal"):
         if operation == "publish":
             if payload.get("last_scan",{}).get("mode") != "live":
                 raise RuntimeError("shadow snapshots cannot be published to the live read view")
-            return {"revision":revision,"published":state_store_from_env().publish_snapshot(payload)}
+            return {"revision":revision,"published":state_store_from_env(load=False).publish_snapshot(payload)}
         raise ValueError("unsupported operation")
     finally:
         journal.close()
@@ -57,10 +57,18 @@ def main():
         else:
             import psycopg
             from pathlib import Path
-            connection = psycopg.connect(url,autocommit=True,connect_timeout=8)
-            with connection.transaction():
-                connection.execute((Path(__file__).resolve().parents[1]/"schema/runtime_ledger.sql").read_text())
-            store = ResearchJournal(connection=connection,initialize=False)
+            label=os.getenv("CSR_RESEARCH_ENVIRONMENT")
+            if label not in {"preview","production","test"}:
+                raise RuntimeError("set CSR_RESEARCH_ENVIRONMENT before migration")
+            with psycopg.connect(url,autocommit=True,connect_timeout=8) as connection:
+                with connection.transaction():
+                    connection.execute((Path(__file__).resolve().parents[1]/"schema/runtime_ledger.sql").read_text(encoding="utf-8"))
+                    current=connection.execute("SELECT environment FROM csr_runtime WHERE id=1 FOR UPDATE").fetchone()[0]
+                    if current is not None and current!=label:
+                        raise RuntimeError("migration cannot rebind an existing ledger environment")
+                    connection.execute("UPDATE csr_runtime SET environment=%s WHERE id=1 AND environment IS NULL",(label,))
+            print("research schema initialized")
+            return
         store.close()
         print("research schema initialized")
     else:
