@@ -16,13 +16,13 @@ except ImportError:
     from request_budget import RequestBudget, CURRENT
 
 
-def work(operation, root="data/journal"):
+def work(operation, root="data/journal", operation_id=None):
     if operation == "drain":
         try:
             from .run_cycle import run
         except ImportError:
             from run_cycle import run
-        return run(root=root,drain=True)
+        return run(root=root,drain=True,operation_id=operation_id)
     journal = open_journal(root)
     try:
         if operation == "validate":

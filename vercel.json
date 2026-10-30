@@ -8,6 +8,10 @@
     "sin1"
   ],
   "functions": {
+    "api/scheduler.py": {
+      "includeFiles": "src/**",
+      "maxDuration": 60
+    },
     "api/dashboard.py": {
       "includeFiles": "{api/index.py,index.html}"
     },
@@ -27,6 +31,10 @@
     }
   },
   "routes": [
+    {
+      "src": "^/api/scheduler$",
+      "dest": "/api/scheduler.py"
+    },
     {
       "src": "^/api/dashboard-meta$",
       "dest": "/api/dashboard_data.py?kind=meta"
