@@ -28,3 +28,6 @@
 每輪只允許 25 個深入分析名額，故續跑用來完成全市場覆蓋；若直接停掉續跑，其餘標的會停留在待評估。若要嚴格限制「整個系統每小時只有一次採集」，必須重新選擇執行位置／容量、active lifecycle 延遲與 validation 頻率，再做單獨的變更驗收。
 
 本次不因此調整模型或關閉 validation。新增的持久執行收據與 [24 小時驗收](current-status.md) 將量測每種 operation 的實際上游 request、閒置與錯誤數；之前未保存的 validation request count 不回填或當作零。
+## 後續改善狀態
+
+已新增 opt-in 的 [依待辦喚醒方案](demand-driven-scheduler.md)，預設關閉。上述正式頻率與請求量基準仍適用；目前尚未切換 demand 或增量歷史採集。

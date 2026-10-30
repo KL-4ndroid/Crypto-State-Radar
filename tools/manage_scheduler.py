@@ -9,17 +9,18 @@ from urllib.parse import urlparse
 from qstash import QStash
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from src.scheduler_contract import CRONS
+from src.scheduler_contract import CRONS, DEMAND_CRONS
 
 
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('command',choices=['plan','prepare','activate','pause','status','probe'])
     p.add_argument('--environment',choices=['preview','production'],required=True)
+    p.add_argument('--mode',choices=['periodic','demand'],default='periodic')
     p.add_argument('--origin',required=True)
     p.add_argument('--credentials',required=True,help='Ignored local JSON file with QSTASH_TOKEN and QSTASH_URL')
     p.add_argument('--preview-auth',help='Ignored Vercel env file with a short-lived OIDC token')
-    p.add_argument('--operation',choices=list(CRONS),default='full_scan')
+    p.add_argument('--operation',choices=sorted(set(CRONS)|set(DEMAND_CRONS)),default='full_scan')
     args=p.parse_args()
     origin=args.origin.rstrip('/')
     url=urlparse(origin)
@@ -30,11 +31,13 @@ def main():
     if args.environment=='preview' and (not url.hostname.startswith('crypto-state-radar-') or not url.hostname.endswith('.vercel.app')):
         p.error('preview must target this project on vercel.app')
     queue='csr-'+args.environment+'-v1'
-    ids={op:queue+'-'+op.replace('_','-') for op in CRONS}
+    crons = DEMAND_CRONS if args.mode=='demand' else CRONS
+    prefix = queue if args.mode=='periodic' else 'csr-'+args.environment+'-demand-v1'
+    ids={op:prefix+'-'+op.replace('_','-') for op in crons}
     target=origin+'/api/scheduler'
-    expected=[dict(operation=op,schedule_id=ids[op],cron=cron,destination=target,flow_key=queue) for op,cron in CRONS.items()]
+    expected=[dict(operation=op,schedule_id=ids[op],cron=cron,destination=target,flow_key=queue) for op,cron in crons.items()]
     if args.command=='plan':
-        print(json.dumps(dict(environment=args.environment,deliveries_per_day=600,retries=2,parallelism=1,schedules=expected),indent=2));return
+        print(json.dumps(dict(environment=args.environment,mode=args.mode,fixed_deliveries_per_day=120 if args.mode=='demand' else 600,dynamic_deliveries=args.mode=='demand',retries=2,parallelism=1,schedules=expected),indent=2));return
     secrets=json.loads(Path(args.credentials).read_text(encoding='utf-8'))
     provider=urlparse(secrets['QSTASH_URL'])
     if provider.scheme!='https' or not provider.hostname.endswith('.upstash.io'):
@@ -55,9 +58,13 @@ def main():
                 method='POST',headers=headers,retries=2,timeout='55s',schedule_id=row['schedule_id'])
             client.schedule.pause(row['schedule_id'])
         print(json.dumps({'prepared':ids,'flow_key':queue,'paused':True}));return
-    schedules={s.schedule_id:asdict(s) for s in client.schedule.list() if s.schedule_id in ids.values()}
+    all_schedules = client.schedule.list()
+    schedules={s.schedule_id:asdict(s) for s in all_schedules if s.schedule_id in ids.values()}
     if args.command=='activate':
-        if len(schedules)!=len(ids):p.error('prepare all three schedules first')
+        if len(schedules)!=len(ids):p.error('prepare all planned schedules first')
+        other_prefix = queue+'-' if args.mode=='demand' else 'csr-'+args.environment+'-demand-v1-'
+        if any(s.schedule_id.startswith(other_prefix) and s.schedule_id not in ids.values() and not s.paused for s in all_schedules):
+            p.error('pause the previous mode before activating its replacement')
         for row in expected:
             actual=schedules[row['schedule_id']]
             if actual['destination']!=target or (actual['flow_control'] or {}).get('key')!=queue or (actual['flow_control'] or {}).get('parallelism')!=1 or actual['cron']!=row['cron'] or actual['queue']:

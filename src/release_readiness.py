@@ -15,6 +15,7 @@ def configuration_checks(environment,stage="preview"):
     key=environment.get("CSR_STATE_KEY","")
     url=urlparse(environment.get("CSR_RESEARCH_WORKER_URL",""))
     checks = {
+        "scheduler_mode_valid":environment.get("CSR_SCHEDULER_MODE","periodic") in {"periodic","demand"},
         "database_configured":bool(environment.get("CSR_RESEARCH_DATABASE_URL")),
         "database_environment_matches":environment.get("CSR_RESEARCH_ENVIRONMENT")==stage,
         "scan_token_configured":bool(scan),
@@ -31,6 +32,9 @@ def configuration_checks(environment,stage="preview"):
             qstash_signing_keys_configured=bool(current and next_key and current!=next_key and "[SENSITIVE]" not in current+next_key),
             scheduler_origin_https=https_origin(origin),
             production_scheduler_origin_matches=stage!="production" or origin.rstrip("/")=="https://crypto-state-radar.vercel.app")
+        if environment.get('CSR_SCHEDULER_MODE')=='demand':
+            provider=urlparse(environment.get('QSTASH_URL',''))
+            checks['qstash_publisher_configured']=bool(environment.get('QSTASH_TOKEN') and provider.scheme=='https' and provider.hostname and provider.hostname.endswith('.upstash.io'))
     else:
         checks["worker_url_https"]=url.scheme=="https" and bool(url.hostname) and not url.username and not url.password and not url.query and not url.fragment
     return checks
@@ -57,6 +61,10 @@ def inspect(stage="preview",connections=False):
                     protected=not connection.execute("SELECT has_column_privilege(current_user,'csr_runtime','ledger_id','UPDATE') OR has_column_privilege(current_user,'csr_runtime','environment','UPDATE')").fetchone()[0]
                     report["connection_checks"]={"ledger_readable":revision>=0 and bool(ledger_id),"environment_bound":label==stage,"ledger_identity_protected":protected,"immutable_records_privileges":insert and not update and not delete,
                         "runtime_has_no_schema_ddl":not ddl,"immutability_trigger":bool(trigger),"retry_schema":len(retry_columns)==3}
+                    if os.getenv('CSR_SCHEDULER_MODE')=='demand':
+                        connection.execute('SELECT operation,token,due_at,status,lease_until FROM csr_scheduler_wakes LIMIT 0')
+                        privileges=connection.execute("SELECT has_table_privilege(current_user,'csr_scheduler_wakes','SELECT') AND has_table_privilege(current_user,'csr_scheduler_wakes','INSERT') AND has_table_privilege(current_user,'csr_scheduler_wakes','UPDATE'),has_table_privilege(current_user,'csr_scheduler_wakes','DELETE')").fetchone()
+                        report['connection_checks']['wake_outbox_privileges']=bool(privileges[0] and not privileges[1])
         except Exception as exc:
             # Never include exception messages, DSNs, tokens or environment values.
             report["connection_checks"]={"error_type":type(exc).__name__}

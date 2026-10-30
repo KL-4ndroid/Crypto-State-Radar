@@ -38,9 +38,13 @@ class handler(ScanHandler):
             message_id = self.headers.get("Upstash-Message-Id","")
             if operation not in OPERATIONS or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}",message_id):
                 raise ValueError()
+            wake_token = payload.get('wake_token')
+            if wake_token is not None and (operation not in {'drain','validate'} or not isinstance(wake_token,str) or not re.fullmatch(r'[a-f0-9]{32}',wake_token)):
+                raise ValueError()
         except (ValueError,TypeError):
             self._send(400,{"error":"invalid_operation_or_message"}); return
         try:
-            self._send(200,execute(operation,message_id,bool(self.headers.get("Upstash-Schedule-Id"))))
+            args = (operation,message_id,bool(self.headers.get("Upstash-Schedule-Id")))
+            self._send(200,execute(*args,**({'wake_token':wake_token} if wake_token else {})))
         except Exception:
             self._send(503,{"error":"scheduler_operation_failed","retryable":True})

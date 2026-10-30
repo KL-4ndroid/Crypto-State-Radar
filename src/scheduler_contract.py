@@ -1,5 +1,6 @@
 """The production cadence shared by provisioning and read-only acceptance."""
 CRONS = {"full_scan":"7 * * * *", "drain":"3-58/5 * * * *", "validate":"4-59/5 * * * *"}
+DEMAND_CRONS = {"full_scan":"7 * * * *", "repair":"2,17,32,47 * * * *"}
 
 
 def scheduled_minute(operation, minute):
