@@ -144,3 +144,23 @@ def test_pending_preserves_success_timestamp_and_ready_anchor():
     pending = defer_state(old, start+timedelta(minutes=5), "HTTPError")
     assert pending.updated_at == old.updated_at and pending.ready_price == 100
     assert pending.evaluation_status == "pending" and pending.checked_at != old.updated_at
+
+
+def test_warning_returning_after_watch_starts_a_distinct_setup():
+    start=datetime(2026,1,1,tzinfo=timezone.utc)
+    state=SymbolState("A")
+    state,_=transition(state,decision("EARLY_WARNING","LONG_WATCH",100,1,1),start)
+    assert state.cycle==0
+    state,_=transition(state,decision("WATCH","NEUTRAL",100,0,0),start+timedelta(minutes=5))
+    state,event=transition(state,decision("EARLY_WARNING","LONG_WATCH",100,1,1),start+timedelta(minutes=10))
+    assert state.cycle==1 and event["reason"]=="NEW_CYCLE"
+
+
+def test_legacy_ready_uses_original_entry_for_expiry_and_unknown_anchor_stays_pending():
+    start=datetime(2026,1,1,tzinfo=timezone.utc)
+    previous=SymbolState("A",state="LONG_READY",direction="LONG",entered_at=start.isoformat(),ready_price=100)
+    state,event=transition(previous,decision("LONG_READY","LONG",101,1,1),start+timedelta(hours=5))
+    assert state.state=="EXPIRED" and state.expires_at==(start+timedelta(hours=4)).isoformat()
+    previous.entered_at=None
+    state,event=transition(previous,decision("LONG_READY","LONG",101,1,1),start+timedelta(hours=5))
+    assert event is None and state.pending_reason=="legacy_ready_anchor_missing"

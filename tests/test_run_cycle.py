@@ -130,7 +130,7 @@ def test_real_classifier_receives_enrichment_and_writes_validatable_signal(monke
     assert result["enrichment_succeeded"] == 1
     assert signal["state"] == "LONG_READY"
     assert signal["entry_price"] == 1.1
-    assert signal["model_version"] == "V2.4.0-alpha"
+    assert signal["model_version"] == "V2.4.1-alpha"
     import validation_cycle
     from datetime import timedelta
     observed = datetime.fromisoformat(signal["observed_at"])
@@ -203,3 +203,28 @@ def test_committed_outbox_can_publish_after_failure_without_rescanning(monkeypat
     result=work("publish",root=str(tmp_path))
     assert result["published"] and result["revision"]==1
     assert json.loads((tmp_path/"state.json").read_text())["revision"]==1
+
+
+def test_continuation_waits_for_retry_without_fetching_market(monkeypatch,tmp_path):
+    from datetime import timedelta
+    from src.research_journal import ResearchJournal
+    monkeypatch.setenv("CSR_STATE_FILE",str(tmp_path/"state.json"))
+    monkeypatch.delenv("CSR_STATE_STORE_URL",raising=False)
+    now=datetime.now(timezone.utc)
+    store=ResearchJournal(tmp_path/"research.sqlite3")
+    try:store.commit_cycle(0,{"states":{},"pending":{"A":{"reason":"retry","due_since":now.isoformat(),"next_attempt_at":(now+timedelta(hours=1)).isoformat()}}},[])
+    finally:store.close()
+    with patch("src.run_cycle.collect_market") as collect:
+        result=run(root=str(tmp_path),drain=True)
+        collect.assert_not_called()
+    assert result["status"]=="waiting" and result["pending"]==1
+
+
+def test_legacy_ready_without_anchor_is_counted_as_pending_not_success(monkeypatch,tmp_path):
+    monkeypatch.setenv("CSR_STATE_FILE",str(tmp_path/"state.json"))
+    monkeypatch.delenv("CSR_STATE_STORE_URL",raising=False)
+    (tmp_path/"state.json").write_text(json.dumps({"states":{"EVAAUSDT":{"symbol":"EVAAUSDT","state":"LONG_READY","ready_price":1.1}}}))
+    monkeypatch.setattr("src.run_cycle.collect_market",lambda symbols=None:[snapshot()])
+    result=run(root=str(tmp_path))
+    assert result["enrichment_succeeded"]==0 and result["pending"]==1
+    assert result["enrichment_failures"][0]["reason"]=="legacy_ready_anchor_missing"

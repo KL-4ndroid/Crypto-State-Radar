@@ -42,7 +42,7 @@ def replay():
         new = classify("TEST",features,now).to_dict()
         after = new["state"]
         if c.get("previous"):
-            state,_ = transition(SymbolState("TEST",state=c["previous"],direction="LONG",ready_price=100),new,now)
+            state,_ = transition(SymbolState("TEST",state=c["previous"],direction="LONG",ready_price=100,entered_at=now.isoformat(),expires_at="2026-10-30T04:00:00+00:00"),new,now)
             after = state.state
         results.append({"case":c["name"],"before":old["state"],"before_scores":[old["pump_score"],old["dump_score"]],
             "after":after,"after_scores":[new["pump_score"],new["dump_score"]],"input":features})

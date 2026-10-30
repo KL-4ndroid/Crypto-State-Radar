@@ -1,4 +1,4 @@
-# V2.4.0-alpha contract
+# V2.4.1-alpha contract
 
 Single source: `src/model_contract.py`. Live and offline replay call the same
 pure history function with explicit UTC `as_of`; network access is an adapter.
@@ -24,6 +24,8 @@ history; `candle_closed_at` is the last complete input candle; evaluation time
 is shared by classify/transition; run completion is after commit. These times
 must not be silently substituted or displayed as equivalent.
 
-Compression and missing-value behavior change model semantics. V2.4 is an
+Compression and missing-value behavior change model semantics. V2.4.1 also
+distinguishes warning setups returning after WATCH and safely handles legacy
+READY anchors. It does not recalibrate the score thresholds. V2.4 is an
 unvalidated research version, requiring replay/backtest and isolated shadow
 verification before a live switch. Existing snapshots remain readable.

@@ -25,7 +25,7 @@ def test_fixed_market_cases(case):
     decision = classify("TEST", features, NOW)
     assert decision.model_version == MODEL_VERSION
     if case.get("previous"):
-        previous = SymbolState("TEST", state=case["previous"], ready_price=100, direction="LONG")
+        previous = SymbolState("TEST", state=case["previous"], ready_price=100, direction="LONG",entered_at=NOW.isoformat(),expires_at="2026-10-30T04:00:00+00:00")
         state, _ = transition(previous, decision.to_dict(), NOW)
         assert state.state == case["expected"]
     else:

@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 
-MODEL_VERSION = "V2.4.0-alpha"
+MODEL_VERSION = "V2.4.1-alpha"
 CONTRACT_VERSION = 2
 READY_SCORE = 55.0
 COMPRESSION_THRESHOLD = 0.8
@@ -43,6 +43,7 @@ def zscore(value: float, history: list[float], minimum: int = 5) -> float | None
 
 def snapshot_features(snapshot: dict[str, Any]) -> dict[str, Any]:
     result = {k: number(snapshot.get(k)) for k in ("price", "open_interest", "funding_rate")}
+    result["observed_at"]=snapshot.get("observed_at")
     for horizon in (1, 4, 24):
         key = f"oi_change_{horizon}h"
         value = number(snapshot.get(key))

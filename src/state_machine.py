@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 try:
@@ -18,6 +18,7 @@ except ImportError:
 
 TERMINAL = {"TRIGGERED", "INVALIDATED", "EXPIRED"}
 READY = {"SHORT_READY", "LONG_READY"}
+ACTIVE = {"EARLY_WARNING","PUMP_PRESSURE","DUMP_PRESSURE","LONG_READY","SHORT_READY"}
 STATE_SCHEMA_VERSION = 1
 
 
@@ -109,7 +110,13 @@ class JsonStateStore:
 
 
 def _dt(value: str | None) -> datetime | None:
-    return datetime.fromisoformat(value) if value else None
+    if value is not None and not isinstance(value,str):
+        return None
+    try:
+        result=datetime.fromisoformat(value.replace("Z","+00:00")) if value else None
+        return result if result is not None and result.tzinfo is not None else None
+    except (ValueError,TypeError):
+        return None
 
 
 def _number(value: Any) -> float | None:
@@ -148,6 +155,13 @@ def transition(previous: SymbolState, decision: dict[str, Any], now: datetime | 
     if previous.state in READY:
         new_state, direction = previous.state, previous.direction
         expiry = _dt(previous.expires_at)
+        anchor=_number(previous.ready_price)
+        if expiry is None and previous.expires_at is None and _dt(previous.entered_at):
+            # Legacy compatibility derives from the original entry, never now.
+            expiry=_dt(previous.entered_at)+timedelta(minutes=240)
+            previous=replace(previous,expires_at=expiry.isoformat())
+        if expiry is None or anchor is None or anchor<=0:
+            return defer_state(previous,now,"legacy_ready_anchor_missing"),None
         if expiry and now >= expiry:
             new_state, reason = "EXPIRED", "TTL_EXPIRED"
         elif candidate in READY and candidate != previous.state:
@@ -170,7 +184,8 @@ def transition(previous: SymbolState, decision: dict[str, Any], now: datetime | 
     cycle = previous.cycle
     if previous.state in TERMINAL and candidate == "WATCH":
         new_state = previous.state
-    fresh_cycle = previous.state in TERMINAL and new_state not in TERMINAL
+    fresh_cycle = (previous.state in TERMINAL and new_state not in TERMINAL
+        or previous.state=="WATCH" and new_state in ACTIVE and bool(previous.last_transition and previous.last_transition.endswith("->WATCH")))
     if fresh_cycle:
         cycle += 1
         reason = "NEW_CYCLE"
