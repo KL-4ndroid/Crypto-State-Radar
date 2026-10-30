@@ -60,7 +60,7 @@ def inspect(stage="preview",connections=False):
         except Exception as exc:
             # Never include exception messages, DSNs, tokens or environment values.
             report["connection_checks"]={"error_type":type(exc).__name__}
-    report["remaining_gates"]=["24-hour operational acceptance","representative historical and mature forward evaluation","recorded restore and rollback drill"]
+    report["not_assessed_by_this_tool"]=["24-hour operational acceptance","representative historical and mature forward evaluation","recorded restore and rollback drill"]
     return report
 
 
