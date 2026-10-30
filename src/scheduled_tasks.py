@@ -50,7 +50,9 @@ def execute(operation, message_id, scheduled=False, wake_token=None):
                     raise RuntimeError('unexpected wake token')
                 claimed = demand_scheduler.claim(journal, operation, wake_token, datetime.now(timezone.utc))
                 operation_id = f"wake:{wake_token}:{operation}"
-            if wake_token and not claimed:
+            if (wake_token and not claimed) or (demand and operation in {'drain','validate'} and not wake_token):
+                # A paused periodic schedule may still have an in-flight retry.
+                # Acknowledge it without letting it start a second worker chain.
                 result = {'status':'superseded','request_metrics':{'requests':0,'failed_requests':0,'request_seconds':0}}
             elif operation == 'repair':
                 if not demand:

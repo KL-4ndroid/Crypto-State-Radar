@@ -29,3 +29,9 @@
 回退：先暫停 demand 排程，部署 `CSR_SCHEDULER_MODE=periodic` 並恢復原三個排程。已發出的 demand 通知在 periodic 模式被拒絕，避免偷偷執行；可能短暫產生 provider 重試，保留記錄供核對。新表保留，不刪除歷史或回寫較舊快照。
 
 下一階段才處理有上限的 K 線／funding 歷史快取與增量抓取，需先確保封閉 K 線、as_of、一致視窗、資料修訂及缺口補抓；不在本階段用陳舊資料替代 API 請求。
+
+## 本階段驗證紀錄
+
+2026-10-30 已完成可重播測試及四項真正 PostgreSQL／Redis 隔離測試，包含並行 claim、lease 恢復、相同版本不重寫與公開 key 重建。另於獨立臨時 preview schema 驗證實際簽章入口 → 延遲 QStash 投遞 → validation claim／重試 → 待辦清除後停止喚醒；刻意使用不存在的 signal 測試缺資料重試路徑，全程 Binance request=0、model revision=0。測試 schema 已清除，沒有啟用新的正式或 preview 常駐排程。
+
+證據保存在忽略版控的 `artifacts/verification/demand-preview.json` 與 `storage-services.json`。這些證據不代表 demand 已正式切換，也不代表驗證了模型預測力。舊 periodic 的在途 drain／validate 在 demand 模式只確認收件及重整 intent，不會直接執行採集。

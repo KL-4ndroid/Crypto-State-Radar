@@ -137,3 +137,16 @@ def test_completed_work_retry_repairs_failed_next_wake_without_second_scan(monke
     monkeypatch.setattr(demand,'publish',lambda *args:published.append(args))
     result=scheduled_tasks.execute('drain','retry-delivery',wake_token=token)
     assert calls==['drain'] and len(published)==1 and result['status']=='superseded'
+
+
+def test_old_periodic_delivery_cannot_start_market_work_after_cutover(monkeypatch,journal):
+    for key,value in {'CSR_SCHEDULER_ENABLED':'true','CSR_SCHEDULER_MODE':'demand',
+        'VERCEL_ENV':'preview','CSR_RESEARCH_ENVIRONMENT':'preview','CSR_RESEARCH_DATABASE_URL':'fixture'}.items():
+        monkeypatch.setenv(key,value)
+    monkeypatch.setattr(scheduled_tasks,'open_journal',lambda root:journal)
+    monkeypatch.setattr(journal,'close',lambda:None)
+    monkeypatch.setattr(scheduled_tasks,'persist_receipt',lambda row:None)
+    monkeypatch.setattr(scheduled_tasks,'work',lambda *args,**kw:pytest.fail('old periodic message must not execute'))
+    result=scheduled_tasks.execute('drain','old-periodic-delivery',True)
+    assert result['status']=='superseded' and result['wakes_published']==0
+    assert result['request_metrics']['requests']==0
