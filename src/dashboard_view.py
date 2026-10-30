@@ -53,6 +53,18 @@ def redis_publication(key, payload):
     local incoming=cjson.decode(ARGV[2]);
     if old.ledger_id and old.ledger_id~=incoming.ledger_id then return redis.error_reply('ledger identity mismatch') end end;
     if rev>tonumber(ARGV[1]) then return 0 end;
+    if raw and rev==tonumber(ARGV[1]) then
+      local view=redis.call('GET',KEYS[2]); local meta=redis.call('GET',KEYS[3]);
+      if view and meta then
+        local vok,v=pcall(cjson.decode,view); local mok,m=pcall(cjson.decode,meta);
+        local incoming_view=cjson.decode(ARGV[3]); local incoming_meta=cjson.decode(ARGV[4]);
+        if vok and mok and type(v)=='table' and type(m)=='table'
+          and v.snapshot_id==incoming_view.snapshot_id and m.snapshot_id==v.snapshot_id
+          and m.last_full_scan_at==incoming_meta.last_full_scan_at
+          and v.schema_version==incoming_view.schema_version and m.schema_version==incoming_meta.schema_version
+          then return 1 end
+      end
+    end;
     redis.call('SET',KEYS[1],ARGV[2]);
     redis.call('SET',KEYS[2],ARGV[3]);
     redis.call('SET',KEYS[3],ARGV[4]); return 1"""

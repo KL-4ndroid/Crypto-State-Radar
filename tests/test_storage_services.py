@@ -34,7 +34,7 @@ def postgres():
         admin.execute("UPDATE csr_runtime SET environment='test' WHERE id=1")
         admin.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
         admin.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(sql.Identifier(schema),sql.Identifier(role)))
-        for privileges,table in (("SELECT,INSERT","csr_records"),("SELECT","csr_runtime"),("SELECT,INSERT,UPDATE","csr_validation_jobs")):
+        for privileges,table in (("SELECT,INSERT","csr_records"),("SELECT","csr_runtime"),("SELECT,INSERT,UPDATE","csr_validation_jobs"),("SELECT,INSERT,UPDATE","csr_scheduler_wakes")):
             admin.execute(sql.SQL("GRANT "+privileges+" ON {} TO {}").format(sql.Identifier(table),sql.Identifier(role)))
         admin.execute(sql.SQL("GRANT UPDATE(revision,payload) ON csr_runtime TO {}").format(sql.Identifier(role)))
         def open_store():
@@ -170,6 +170,16 @@ def test_postgres_outbox_and_real_redis_atomic_publication(postgres,monkeypatch)
         view=json.loads(redis_command("GET",key+":dashboard-latest"))
         assert meta["snapshot_id"]==view["snapshot_id"] and view["states"]["A"]["state"]=="LONG_READY"
         assert "ledger_id" not in view
+        # Equal-revision recovery is a no-op when all public keys are intact.
+        before=redis_command('GET',key+':dashboard-meta')
+        assert store.publish_snapshot(published)
+        assert redis_command('GET',key+':dashboard-meta')==before
+        redis_command('DEL',key+':dashboard-latest')
+        assert store.publish_snapshot(published)
+        assert redis_command('GET',key+':dashboard-latest') is not None
+        redis_command('SET',key+':dashboard-meta','broken-json')
+        assert store.publish_snapshot(published)
+        assert json.loads(redis_command('GET',key+':dashboard-meta'))['snapshot_id']==meta['snapshot_id']
         assert len(journal.read("signals"))==1
         # The Dashboard contract also works with the schema-1 writer, without
         # migrating or enabling the new research runtime on a legacy deployment.
@@ -184,3 +194,22 @@ def test_postgres_outbox_and_real_redis_atomic_publication(postgres,monkeypatch)
     finally:
         redis_command("DEL",key,key+":dashboard-meta",key+":dashboard-latest",key+":legacy",key+":legacy:dashboard-meta",key+":legacy:dashboard-latest")
         server.shutdown();server.server_close();thread.join(timeout=5)
+
+
+def test_postgres_concurrent_wake_claims_and_recovery(postgres):
+    from src import demand_scheduler as demand
+    a,b=postgres[0](),postgres[0]()
+    now=datetime(2026,10,30,tzinfo=timezone.utc)
+    a.commit_cycle(0,{'pending':{'A':{}}},[])
+    intents=demand.plan(a,now)
+    operation,token,due=intents[0]
+    assert demand.plan(b,now)==intents
+    def claim(store):
+        try:return demand.claim(store,operation,token,due)
+        except RuntimeError:return 'leased'
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(claim,[a,b]),key=str)==[True,'leased']
+    assert demand.claim(b,operation,token,due+timedelta(seconds=121))
+    demand.finish(b,operation,token)
+    assert not demand.claim(a,operation,token,due+timedelta(seconds=122))
+    assert a.load()[0]==1

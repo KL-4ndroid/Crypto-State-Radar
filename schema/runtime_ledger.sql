@@ -17,6 +17,12 @@ ALTER TABLE csr_validation_jobs ADD COLUMN IF NOT EXISTS next_attempt_at TEXT;
 ALTER TABLE csr_validation_jobs ADD COLUMN IF NOT EXISTS lease_until TEXT;
 ALTER TABLE csr_validation_jobs ADD COLUMN IF NOT EXISTS lease_token TEXT;
 CREATE INDEX IF NOT EXISTS csr_validation_retry ON csr_validation_jobs(status,next_attempt_at,due_at);
+CREATE TABLE IF NOT EXISTS csr_scheduler_wakes (
+ operation TEXT PRIMARY KEY CHECK (operation IN ('drain','validate')),
+ token TEXT NOT NULL, due_at TEXT NOT NULL,
+ status TEXT NOT NULL CHECK (status IN ('pending','sent','processing','idle')),
+ lease_until TEXT
+);
 CREATE OR REPLACE FUNCTION csr_reject_record_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN RAISE EXCEPTION 'research records are immutable'; END;
 $$;

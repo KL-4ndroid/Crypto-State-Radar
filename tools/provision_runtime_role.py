@@ -25,7 +25,7 @@ def provision(admin_url, pooled_url, role, environment):
                 raise ValueError("runtime role already exists")
             connection.execute(sql.SQL("CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT").format(sql.Identifier(role), sql.Literal(password)))
             connection.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(sql.Identifier(role)))
-            for privileges, table in (("SELECT,INSERT", "csr_records"), ("SELECT", "csr_runtime"), ("SELECT,INSERT,UPDATE", "csr_validation_jobs")):
+            for privileges, table in (("SELECT,INSERT", "csr_records"), ("SELECT", "csr_runtime"), ("SELECT,INSERT,UPDATE", "csr_validation_jobs"), ("SELECT,INSERT,UPDATE", "csr_scheduler_wakes")):
                 connection.execute(sql.SQL("GRANT " + privileges + " ON {} TO {}").format(sql.Identifier(table), sql.Identifier(role)))
             connection.execute(sql.SQL("GRANT UPDATE(revision,payload) ON csr_runtime TO {}").format(sql.Identifier(role)))
             # Modern PostgreSQL defaults already deny this; explicitly protect older databases.

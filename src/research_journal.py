@@ -80,6 +80,7 @@ class ResearchJournal:
             self.sql("CREATE TABLE IF NOT EXISTS csr_records (kind TEXT NOT NULL, record_key TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,record_key))")
             self.sql("CREATE TABLE IF NOT EXISTS csr_validation_jobs (signal_id TEXT NOT NULL, horizon TEXT NOT NULL, due_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', last_error TEXT, PRIMARY KEY(signal_id,horizon))")
             self.sql("CREATE INDEX IF NOT EXISTS csr_validation_due ON csr_validation_jobs(status,due_at)")
+            self.sql("CREATE TABLE IF NOT EXISTS csr_scheduler_wakes (operation TEXT PRIMARY KEY, token TEXT NOT NULL, due_at TEXT NOT NULL, status TEXT NOT NULL, lease_until TEXT)")
             if not self.pg:
                 columns = {r[1] for r in self.sql("PRAGMA table_info(csr_validation_jobs)")}
                 for name in ("next_attempt_at","lease_until","lease_token"):
