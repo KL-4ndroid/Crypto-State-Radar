@@ -37,6 +37,7 @@ def publication(payload):
     errors = (scan.get("errors") or 0) + (scan.get("enrichment_errors") or 0)
     market = "unknown" if not checked else "partial" if errors else "ok" if scan.get("scanned", 0) else "unknown"
     meta = {"schema_version": SCHEMA_VERSION, "snapshot_id": snapshot_id, "published_at": published,
+        "last_full_scan_at": (payload.get("last_full_scan") or {}).get("processed_at"),
         "last_successful_scan_at": checked if scan.get("scanned", 0) and not errors else None,
         "expected_scan_interval_seconds": 3600, "scan_status": market,
         "health_checked_at": checked, "services": {"market": market, "state": "ok"},

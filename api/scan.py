@@ -18,6 +18,7 @@ if str(SRC) not in sys.path:
 
 from run_cycle import run  # noqa: E402
 from research_journal import RevisionConflict  # noqa: E402
+from operation_log import emit_operation  # noqa: E402
 
 
 def _authorized(header: str | None, secret: str | None) -> bool:
@@ -51,6 +52,7 @@ class handler(BaseHTTPRequestHandler):
             # Use /tmp for per-run diagnostics; lifecycle state itself is saved
             # through the direct Upstash adapter selected by state_store_from_env.
             summary = run(root=os.getenv("CSR_JOURNAL_ROOT", "/tmp/radar-journal"))
+            emit_operation(self,"full_scan",200,result=summary,elapsed=time.monotonic()-started)
             self._send(200, {
                 "service": "crypto-state-radar",
                 "probe": "hourly-scan",
@@ -58,9 +60,11 @@ class handler(BaseHTTPRequestHandler):
                 "duration_seconds": round(time.monotonic() - started, 3),
                 "summary": summary,
             })
-        except RevisionConflict:
+        except RevisionConflict as exc:
+            emit_operation(self,"full_scan",409,elapsed=time.monotonic()-started,error=exc)
             self._send(409,{"error":"revision_conflict","retryable":True})
         except Exception as exc:
+            emit_operation(self,"full_scan",503,elapsed=time.monotonic()-started,error=exc)
             self._send(503, {
                 "error": "scan_failed",
                 "error_type": type(exc).__name__,
