@@ -1,5 +1,7 @@
 # 排程與前端請求修正紀錄 — 2026-10-30
 
+後續已切換至同帳號 Upstash QStash，GitHub 僅保留人工備援；配置與實際排程證據見 [獨立排程紀錄](independent-scheduler.md)。下列為切換前的調查與修正歷史。
+
 ## 已確認
 
 - Actions 權限、default branch main、workflow active 與 worker enable flag 正常。

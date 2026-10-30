@@ -30,6 +30,10 @@ def execute(operation, message_id, scheduled=False):
             root = os.getenv("CSR_JOURNAL_ROOT", "/tmp/radar-journal")
             operation_id = f"qstash:{message_id}:{operation}"
             result = run(root=root, operation_id=operation_id) if operation == "full_scan" else work(operation, root=root, operation_id=operation_id)
+            if result.get("snapshot_published") is False and not result.get("deduplicated"):
+                # The scan already attempted publication. Let QStash redeliver
+                # for the outbox retry rather than extending this invocation.
+                raise RuntimeError("snapshot publication pending")
             # Lost responses and failed publication must not recollect the market.
             # Idle continuations also retry an earlier unpublished snapshot.
             if operation != "validate" and result.get("mode") == "live" and result.get("snapshot_published") is not True:

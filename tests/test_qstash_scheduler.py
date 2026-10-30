@@ -90,3 +90,13 @@ def test_replay_recovers_publication_and_redacts_payload(monkeypatch,capsys):
     assert result['trigger']=='qstash_schedule'
     assert 'private-dsn' not in json.dumps(result)+capsys.readouterr().out
     assert 'secret-market-payload' not in json.dumps(result)
+
+
+def test_failed_publication_defers_to_next_delivery(monkeypatch):
+    monkeypatch.setenv('CSR_SCHEDULER_ENABLED','true')
+    monkeypatch.setenv('VERCEL_ENV','production')
+    monkeypatch.setenv('CSR_RESEARCH_ENVIRONMENT','production')
+    monkeypatch.setenv('CSR_RESEARCH_DATABASE_URL','private-dsn')
+    monkeypatch.setattr(scheduled_tasks,'run',lambda **kw:{'mode':'live','snapshot_published':False})
+    monkeypatch.setattr(scheduled_tasks,'work',lambda *args,**kw:pytest.fail('outbox belongs to next delivery'))
+    with pytest.raises(RuntimeError):scheduled_tasks.execute('full_scan','msg_test')

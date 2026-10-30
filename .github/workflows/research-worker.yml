@@ -1,8 +1,6 @@
 name: Research Worker (bounded maintenance)
 on:
-  schedule:
-    # Avoid minute 0 and the full-market minute 7; still twelve ticks per hour.
-    - cron: '3-58/5 * * * *'
+  # Automatic execution is owned by Upstash QStash; retain manual recovery.
   workflow_dispatch:
     inputs:
       operation:

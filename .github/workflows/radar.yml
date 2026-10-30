@@ -1,9 +1,8 @@
 name: Radar Scheduler
 
 on:
+  # Automatic execution is owned by Upstash QStash; retain manual recovery.
   workflow_dispatch:
-  schedule:
-    - cron: '7 * * * *'
 
 permissions:
   contents: read
