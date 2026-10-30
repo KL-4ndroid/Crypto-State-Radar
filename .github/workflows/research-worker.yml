@@ -1,0 +1,48 @@
+name: Research Worker (bounded maintenance)
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Bounded research operation (uses configured environment URL)
+        type: choice
+        options: [tick, drain, validate, publish]
+        default: tick
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: crypto-state-radar-research-worker
+  cancel-in-progress: false
+jobs:
+  worker:
+    if: vars.CSR_RESEARCH_WORKER_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Invoke bounded worker
+        env:
+          WORKER_URL: ${{ vars.CSR_RESEARCH_WORKER_URL }}
+          WORKER_TOKEN: ${{ secrets.CSR_WORKER_TOKEN }}
+          OPERATION: ${{ inputs.operation || 'tick' }}
+        run: |
+          set -euo pipefail
+          test -n "$WORKER_TOKEN"
+          case "$WORKER_URL" in https://*) ;; *) echo "Configure an HTTPS research worker URL"; exit 1;; esac
+          case "$OPERATION" in tick|drain|validate|publish) ;; *) exit 1;; esac
+          invoke() {
+            curl --fail-with-body --silent --show-error --max-time 90 \
+              -X POST -H "Authorization: Bearer $WORKER_TOKEN" \
+              "${WORKER_URL%/}/api/research?operation=$1"
+          }
+          if [ "$OPERATION" = tick ]; then
+            result="$(invoke drain)"
+            printf '%s\n' "$result"
+            invoke validate
+            if [ "$(printf '%s' "$result" | jq -r '.mode // empty')" = live ]; then
+              invoke publish
+            fi
+          else
+            invoke "$OPERATION"
+          fi

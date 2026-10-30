@@ -120,3 +120,47 @@ def test_transition_persists_latest_dashboard_metrics():
     assert state.pump_score == 18.0
     assert state.dump_score == 62.5
     assert state.last_reasons == ["OI_ACCELERATION"]
+
+
+def test_ready_keeps_original_anchor_and_fixed_expiry_then_expires():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    expiry = (start + timedelta(hours=4)).isoformat()
+    state = SymbolState("TEST", state="LONG_READY", direction="LONG", entered_at=start.isoformat(), ready_price=100, ready_oi=10, expires_at=expiry)
+    # Still confirmed but below entry: do not move the trigger down to 99.
+    state, event = transition(state, decision("LONG_READY", "LONG", 99, 1, 1, (start+timedelta(hours=5)).isoformat()), start+timedelta(hours=1))
+    assert event is None and state.ready_price == 100 and state.expires_at == expiry
+    state, event = transition(state, decision("LONG_READY", "LONG", 101, 1, 1), start+timedelta(hours=4))
+    assert state.state == "EXPIRED" and event["reason"] == "TTL_EXPIRED"
+    state, event = transition(state, decision("WATCH", "NEUTRAL", 100, 0, 0), start+timedelta(hours=5))
+    assert state.state == "EXPIRED" and event is None
+    state, event = transition(state, decision("LONG_READY", "LONG", 100, 1, 1, (start+timedelta(hours=10)).isoformat()), start+timedelta(hours=6))
+    assert state.cycle == 1 and state.ready_price == 100
+
+
+def test_pending_preserves_success_timestamp_and_ready_anchor():
+    from src.state_machine import defer_state
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    old = SymbolState("TEST", state="LONG_READY", updated_at=start.isoformat(), ready_price=100)
+    pending = defer_state(old, start+timedelta(minutes=5), "HTTPError")
+    assert pending.updated_at == old.updated_at and pending.ready_price == 100
+    assert pending.evaluation_status == "pending" and pending.checked_at != old.updated_at
+
+
+def test_warning_returning_after_watch_starts_a_distinct_setup():
+    start=datetime(2026,1,1,tzinfo=timezone.utc)
+    state=SymbolState("A")
+    state,_=transition(state,decision("EARLY_WARNING","LONG_WATCH",100,1,1),start)
+    assert state.cycle==0
+    state,_=transition(state,decision("WATCH","NEUTRAL",100,0,0),start+timedelta(minutes=5))
+    state,event=transition(state,decision("EARLY_WARNING","LONG_WATCH",100,1,1),start+timedelta(minutes=10))
+    assert state.cycle==1 and event["reason"]=="NEW_CYCLE"
+
+
+def test_legacy_ready_uses_original_entry_for_expiry_and_unknown_anchor_stays_pending():
+    start=datetime(2026,1,1,tzinfo=timezone.utc)
+    previous=SymbolState("A",state="LONG_READY",direction="LONG",entered_at=start.isoformat(),ready_price=100)
+    state,event=transition(previous,decision("LONG_READY","LONG",101,1,1),start+timedelta(hours=5))
+    assert state.state=="EXPIRED" and state.expires_at==(start+timedelta(hours=4)).isoformat()
+    previous.entered_at=None
+    state,event=transition(previous,decision("LONG_READY","LONG",101,1,1),start+timedelta(hours=5))
+    assert event is None and state.pending_reason=="legacy_ready_anchor_missing"

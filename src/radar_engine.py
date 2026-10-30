@@ -9,8 +9,10 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
-MODEL_VERSION = "V2.3.0-alpha"
-READY_SCORE = 55.0
+try:
+    from .model_contract import MODEL_VERSION, READY_SCORE, COMPRESSION_THRESHOLD, number
+except ImportError:
+    from model_contract import MODEL_VERSION, READY_SCORE, COMPRESSION_THRESHOLD, number
 
 
 @dataclass(frozen=True)
@@ -40,49 +42,50 @@ def _clip(v: float) -> float:
 
 def score(features: dict[str, Any]) -> tuple[float, float, list[str], list[str]]:
     """Score early-warning pressure. Missing fields are neutral, never fabricated."""
-    oi1 = float(features.get("oi_change_1h") or 0)
-    oi4 = float(features.get("oi_change_4h") or 0)
-    oi24 = float(features.get("oi_change_24h") or 0)
-    p1 = float(features.get("price_change_1h") or 0)
-    p4 = float(features.get("price_change_4h") or 0)
-    funding_z = float(features.get("funding_z") or 0)
-    funding_acc = float(features.get("funding_acceleration") or 0)
-    vol_z = float(features.get("volume_z") or 0)
-    compression = float(features.get("volatility_compression") or 0)
+    oi1 = number(features.get("oi_change_1h"))
+    oi4 = number(features.get("oi_change_4h"))
+    oi24 = number(features.get("oi_change_24h"))
+    p1 = number(features.get("price_change_1h"))
+    p4 = number(features.get("price_change_4h"))
+    funding_z = number(features.get("funding_z"))
+    funding_acc = number(features.get("funding_acceleration"))
+    vol_z = number(features.get("volume_z"))
+    compression = number(features.get("volatility_compression"))
 
-    oi_acc = oi1 - (oi24 / 24.0)
+    oi_acc = oi1 - (oi24 / 24.0) if oi1 is not None and oi24 is not None else None
     pump = dump = 0.0
     pr: list[str] = []
     dr: list[str] = []
 
-    if oi_acc > 1: pump += min(24, oi_acc * 5); dump += min(24, oi_acc * 5)
-    if vol_z > 1.5: pump += min(18, vol_z * 5); dump += min(18, vol_z * 5)
-    if compression > 0.5: pump += 10; dump += 10
+    if oi_acc is not None and oi_acc > 1: pump += min(24, oi_acc * 5); dump += min(24, oi_acc * 5)
+    if vol_z is not None and vol_z > 1.5: pump += min(18, vol_z * 5); dump += min(18, vol_z * 5)
+    if compression is not None and 0 <= compression < COMPRESSION_THRESHOLD:
+        pump += 10; dump += 10; pr.append("VOLATILITY_COMPRESSION"); dr.append("VOLATILITY_COMPRESSION")
 
-    if oi1 > 0 and p1 > 0:
+    if oi1 is not None and p1 is not None and oi1 > 0 and p1 > 0:
         pump += min(28, p1 * 4 + oi1 * 1.5); pr.append("PRICE_UP_OI_UP")
-    if oi1 > 0 and p1 < 0:
+    if oi1 is not None and p1 is not None and oi1 > 0 and p1 < 0:
         dump += min(30, abs(p1) * 4 + oi1 * 1.5); dr.append("PRICE_DOWN_OI_UP")
 
-    if funding_z < -1.5 and p1 >= 0:
+    if funding_z is not None and p1 is not None and funding_z < -1.5 and p1 >= 0:
         pump += min(25, abs(funding_z) * 7); pr.append("SHORT_CROWDING_RESISTED")
-    if funding_z > 1.5 and p1 <= 0:
+    if funding_z is not None and p1 is not None and funding_z > 1.5 and p1 <= 0:
         dump += min(25, funding_z * 7); dr.append("LONG_CROWDING_RESISTED")
-    if funding_acc < 0 and p1 >= 0: pump += min(10, abs(funding_acc) * 4)
-    if funding_acc > 0 and p1 <= 0: dump += min(10, funding_acc * 4)
+    if funding_acc is not None and p1 is not None and funding_acc < 0 and p1 >= 0: pump += min(10, abs(funding_acc) * 4)
+    if funding_acc is not None and p1 is not None and funding_acc > 0 and p1 <= 0: dump += min(10, funding_acc * 4)
 
-    if oi_acc > 1: pr.append("OI_ACCELERATION"); dr.append("OI_ACCELERATION")
-    if vol_z > 1.5: pr.append("VOLUME_EXPANSION"); dr.append("VOLUME_EXPANSION")
+    if oi_acc is not None and oi_acc > 1: pr.append("OI_ACCELERATION"); dr.append("OI_ACCELERATION")
+    if vol_z is not None and vol_z > 1.5: pr.append("VOLUME_EXPANSION"); dr.append("VOLUME_EXPANSION")
     return _clip(pump), _clip(dump), pr, dr
 
 
 def classify(symbol: str, features: dict[str, Any], now: datetime | None = None) -> RadarDecision:
     now = now or datetime.now(timezone.utc)
     pump, dump, pr, dr = score(features)
-    oi1 = float(features.get("oi_change_1h") or 0)
-    oi4 = float(features.get("oi_change_4h") or 0)
-    p1 = float(features.get("price_change_1h") or 0)
-    p4 = float(features.get("price_change_4h") or 0)
+    oi1 = number(features.get("oi_change_1h"))
+    oi4 = number(features.get("oi_change_4h"))
+    p1 = number(features.get("price_change_1h"))
+    p4 = number(features.get("price_change_4h"))
 
     state, direction, ttl, reasons = "WATCH", "NEUTRAL", None, []
     invalidation = "Score falls below watch threshold or structure reverses."
@@ -91,8 +94,9 @@ def classify(symbol: str, features: dict[str, Any], now: datetime | None = None)
     # Once both price and OI confirm on 1h + 4h, a moderate-high pressure score is
     # sufficient for READY. Requiring 70 here made confirmed breakdowns remain only
     # EARLY_WARNING, which contradicted the execution-state design.
-    short_confirmed = p1 < 0 and p4 < 0 and oi1 < 0 and oi4 < 0
-    long_confirmed = p1 > 0 and p4 > 0 and oi1 > 0 and oi4 > 0
+    complete = all(v is not None for v in (p1, p4, oi1, oi4))
+    short_confirmed = complete and p1 < 0 and p4 < 0 and oi1 < 0 and oi4 < 0
+    long_confirmed = complete and p1 > 0 and p4 > 0 and oi1 > 0 and oi4 > 0
 
     if dump >= READY_SCORE and short_confirmed:
         state, direction, ttl, reasons = "SHORT_READY", "SHORT", 240, dr + ["PRICE_CONFIRMATION", "OI_RETREAT"]

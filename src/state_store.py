@@ -10,15 +10,20 @@ import json
 import os
 import urllib.error
 import urllib.request
+import threading
+import sqlite3
 from pathlib import Path
 from typing import Protocol
 
 try:
     from .state_machine import SymbolState, decode_snapshot, encode_snapshot
+    from .dashboard_view import publication, redis_publication
 except ImportError:  # Allow direct execution with PYTHONPATH=src
     from state_machine import SymbolState, decode_snapshot, encode_snapshot
+    from dashboard_view import publication, redis_publication
 
 DEFAULT_STATE_KEY = "crypto-state-radar:state:v1"
+_FILE_PUBLICATION_LOCK = threading.Lock()
 
 
 class StateStore(Protocol):
@@ -38,8 +43,10 @@ class FileStateStore:
             self.states = decode_snapshot(payload)
 
     def _save(self) -> None:
+        payload=encode_snapshot(self.states)
+        payload["_dashboard"]=publication(payload)
         self.path.write_text(
-            json.dumps(encode_snapshot(self.states), ensure_ascii=False, indent=2),
+            json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
@@ -56,6 +63,28 @@ class FileStateStore:
 
     def all(self) -> dict[str, SymbolState]:
         return dict(self.states)
+
+    def publish_snapshot(self, payload: dict) -> bool:
+        # SQLite lock coordinates local processes as well as threads. It is not
+        # the research ledger; it only serializes replacing this local read view.
+        lock = sqlite3.connect(str(self.path)+".publish-lock",timeout=5)
+        try:
+            with _FILE_PUBLICATION_LOCK:
+                lock.execute("BEGIN EXCLUSIVE")
+                current = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+                if current.get("ledger_id") and current["ledger_id"]!=payload.get("ledger_id"):
+                    raise RuntimeError("read view belongs to another research ledger")
+                if current.get("revision",0) > payload["revision"]:
+                    return False
+                payload=dict(payload,_dashboard=publication(payload))
+                temporary = self.path.with_suffix(".tmp")
+                temporary.write_text(json.dumps(payload,ensure_ascii=False),encoding="utf-8")
+                temporary.replace(self.path)
+        finally:
+            lock.rollback()
+            lock.close()
+        self.states = decode_snapshot(payload)
+        return True
 
 
 class HttpJsonStateStore:
@@ -116,12 +145,12 @@ class UpstashRestStateStore:
     snapshot size is not constrained by URL-length limits.
     """
 
-    def __init__(self, base_url: str, token: str, key: str = DEFAULT_STATE_KEY, timeout: float = 10.0) -> None:
+    def __init__(self, base_url: str, token: str, key: str = DEFAULT_STATE_KEY, timeout: float = 10.0, load: bool = True) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.key = key
         self.timeout = timeout
-        self.states = self._load()
+        self.states = self._load() if load else {}
 
     def _command(self, *parts: object) -> object:
         body = json.dumps([str(part) for part in parts], separators=(",", ":")).encode("utf-8")
@@ -154,10 +183,8 @@ class UpstashRestStateStore:
         return decode_snapshot(payload)
 
     def _save(self) -> None:
-        payload = json.dumps(encode_snapshot(self.states), ensure_ascii=False, separators=(",", ":"))
-        result = self._command("SET", self.key, payload)
-        if result != "OK":
-            raise RuntimeError("Upstash state SET did not return OK")
+        if not self.publish_snapshot(encode_snapshot(self.states)):
+            raise RuntimeError("Upstash state publication was superseded")
 
     def get(self, symbol: str) -> SymbolState:
         return self.states.get(symbol, SymbolState(symbol=symbol))
@@ -173,8 +200,11 @@ class UpstashRestStateStore:
     def all(self) -> dict[str, SymbolState]:
         return dict(self.states)
 
+    def publish_snapshot(self, payload: dict) -> bool:
+        return self._command(*redis_publication(self.key,payload)) == 1
 
-def state_store_from_env() -> StateStore:
+
+def state_store_from_env(load: bool = True) -> StateStore:
     """Select durable persistence without coupling scanner logic to one host."""
     upstash_url = os.getenv("KV_REST_API_URL")
     upstash_token = os.getenv("KV_REST_API_TOKEN")
@@ -183,6 +213,7 @@ def state_store_from_env() -> StateStore:
             upstash_url,
             upstash_token,
             key=os.getenv("CSR_STATE_KEY", DEFAULT_STATE_KEY),
+            load=load,
         )
 
     url = os.getenv("CSR_STATE_STORE_URL")

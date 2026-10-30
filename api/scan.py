@@ -17,6 +17,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from run_cycle import run  # noqa: E402
+from research_journal import RevisionConflict  # noqa: E402
 
 
 def _authorized(header: str | None, secret: str | None) -> bool:
@@ -57,6 +58,8 @@ class handler(BaseHTTPRequestHandler):
                 "duration_seconds": round(time.monotonic() - started, 3),
                 "summary": summary,
             })
+        except RevisionConflict:
+            self._send(409,{"error":"revision_conflict","retryable":True})
         except Exception as exc:
             self._send(503, {
                 "error": "scan_failed",
