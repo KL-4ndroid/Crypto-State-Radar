@@ -224,3 +224,49 @@ def test_v33_postgres_namespace_concurrency_and_immutable_results(postgres):
             with admin.transaction():admin.execute(sql.SQL('UPDATE {} SET payload=%s').format(sql.Identifier(table)),('{}',))
     other=ContractStore(a,'BACKTEST','different')
     with pytest.raises(ValueError):other.evaluate('A',now,policy['rule_version'],[feature])
+
+
+def test_v33_acquisition_postgres_atomic_cursor_and_leases(postgres,tmp_path,monkeypatch):
+    from src.v33.journal import ContractStore
+    from src.v33.acquisition import AcquisitionQueue,StaleAcquisition
+    from src.v33.archive import FileArchive
+    from src.v33.contracts import stamp
+    from psycopg import sql
+    open_store,admin,psycopg=postgres
+    root=Path(__file__).resolve().parents[1]
+    with admin.transaction():admin.execute((root/'schema/v33_contract.sql').read_text(encoding='utf-8'))
+    for _ in range(2):
+        with admin.transaction():admin.execute((root/'schema/v33_acquisition.sql').read_text(encoding='utf-8'))
+    a,b=open_store(),open_store()
+    role=a.db.execute('SELECT current_user').fetchone()[0]
+    for table in ('csr_v33_acquisition','csr_v33_acquisition_items'):
+        admin.execute(sql.SQL('GRANT SELECT,INSERT ON {} TO {}').format(sql.Identifier(table),sql.Identifier(role)))
+    admin.execute(sql.SQL('GRANT UPDATE(revision,cursor_payload,next_due,attempts,lease_token,lease_until,last_error) ON csr_v33_acquisition TO {}').format(sql.Identifier(role)))
+    stores=[ContractStore(j,'SHADOW','acquisition-test') for j in (a,b)]
+    queues=[AcquisitionQueue(s) for s in stores]
+    now=datetime(2026,10,31,tzinfo=timezone.utc);start=int(now.timestamp()*1000)
+    queues[0].ensure('oi','BTCUSDT',start,now)
+    def claim(queue):return queue.claim('oi','BTCUSDT',now)
+    with admin.transaction():
+        admin.execute('SELECT id FROM csr_runtime WHERE id=1 FOR UPDATE')
+        with ThreadPoolExecutor(max_workers=2) as pool:claims=list(pool.map(claim,queues))
+        assert sum(c is not None for c in claims)==1  # No dependency on live runtime lock.
+    winner=next(i for i,c in enumerate(claims) if c is not None);queue=queues[winner];store=stores[winner];claim=claims[winner]
+    archive=FileArchive(tmp_path/'raw');blob=archive.put(b'[{"quantity":"1"}]')
+    item={'key':str(start),'effective_time':stamp(now),'values':{'raw_timestamp':start,'quantity':'1','notional':'10'}}
+    original=queue.journal._insert
+    def fail_manifest(kind,key,row):
+        if kind==store.kind('acquisitions'):raise RuntimeError('injected manifest failure')
+        return original(kind,key,row)
+    monkeypatch.setattr(queue.journal,'_insert',fail_manifest)
+    with pytest.raises(RuntimeError):queue.finish(claim,[item],claim['cursor'],{'archive':blob},now,now,completed_at=now)
+    assert queue.status('oi','BTCUSDT')['revision']==0
+    assert admin.execute('SELECT COUNT(*) FROM csr_v33_acquisition_items').fetchone()[0]==0
+    assert store.journal.read(store.kind('raw'))==[]
+    monkeypatch.setattr(queue.journal,'_insert',original)
+    receipt=queue.finish(claim,[item],claim['cursor'],{'archive':blob},now,now,completed_at=now)
+    assert receipt['new_records']==1 and queue.status('oi','BTCUSDT')['revision']==1
+    with pytest.raises(StaleAcquisition):queue.finish(claim,[item],claim['cursor'],{'archive':blob},now,now,completed_at=now)
+    with pytest.raises(psycopg.Error):
+        with admin.transaction():admin.execute("UPDATE csr_v33_acquisition_items SET content_hash='changed'")
+    assert a.load()[0]==0 and archive.read(blob['sha256'])==b'[{"quantity":"1"}]'

@@ -22,3 +22,5 @@ availability_time 是本系統確知已可取得的時間。歷史下載的 even
 - [Binance USDⓈ-M Market Data](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data)
 - [Binance Public Data](https://github.com/binance/binance-public-data)
 - [Smart Signal](https://www.binance.com/en/support/faq/detail/197ed63fbca34124bae53d8e6d4c9d29)
+
+2026-10-31 source contract v2：新增本機 pilot adapter 與 derived window metadata，Futures aggTrades REST 確認限最近 48h；Taker 的有界 query overlap 與快照 clock lead 處理／證據見 [採集交付](08_acquisition_delivery.md)。來源版本更新不代表已啟用正式採集。

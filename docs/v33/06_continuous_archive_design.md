@@ -37,3 +37,5 @@ metadata/catalog + bounded acquisition jobs
 記錄 ingested_at、observed availability、interval start/end、source_revision/checksum、row count、首末 trade ID、known-bad interval、採集 universe 與失敗原因。新修訂 append 新 manifest，舊 raw／feature／evaluation 不刪改。retention／封存需先提出 bytes/day、容量上限與 restore 驗證，不自動清除研究歷史。
 
 本輪交付來源契約、schema、因果 feature store 與 replay；上述 continuous acquisition、raw object backend、CVD builder、gap repair worker、歷史 event dataset 均尚未連接或啟用。
+
+後續進度（2026-10-31）：有界本機採集、可恢復游標、原始保存與完整窗口 CVD 的實作／限制見 [採集交付](08_acquisition_delivery.md)。本檔保留為初始設計；正式 continuous acquisition 與遠端 raw backend 仍未啟用。
