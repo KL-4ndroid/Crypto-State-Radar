@@ -17,6 +17,7 @@ for key in ("KV_REST_API_URL","KV_REST_API_TOKEN","CSR_STATE_STORE_URL","CSR_STA
     os.environ.pop(key,None)
 from api import scan
 from api.dashboard import _render_dashboard
+from api.dashboard_data import handler as DataHandler
 import run_cycle
 
 
@@ -40,6 +41,10 @@ with tempfile.TemporaryDirectory(prefix="radar-acceptance-") as directory:
         def do_GET(self):
             if self.path=="/":
                 body=_render_dashboard();self.send_response(200);self.send_header("Content-Type","text/html; charset=utf-8");self.end_headers();self.wfile.write(body)
+            elif self.path=="/dashboard-controller.js":
+                body=(ROOT/"dashboard-controller.js").read_bytes();self.send_response(200);self.send_header("Content-Type","text/javascript");self.end_headers();self.wfile.write(body)
+            elif self.path.startswith(("/api/dashboard-meta","/api/dashboard-latest")):
+                DataHandler.do_GET(self)
             elif self.path=="/api/state":
                 self._send(200,json.loads(state_file.read_text(encoding="utf-8")) if state_file.exists() else {"states":{}})
             elif self.path in {"/api/state-health","/api/binance-health"}:

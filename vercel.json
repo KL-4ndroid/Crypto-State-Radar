@@ -21,9 +21,20 @@
     "api/research.py": {
       "includeFiles": "{src/**,api/scan.py}",
       "maxDuration": 60
+    },
+    "api/dashboard_data.py": {
+      "includeFiles": "{src/dashboard_view.py,api/index.py}"
     }
   },
   "routes": [
+    {
+      "src": "^/api/dashboard-meta$",
+      "dest": "/api/dashboard_data.py?kind=meta"
+    },
+    {
+      "src": "^/api/dashboard-latest$",
+      "dest": "/api/dashboard_data.py?kind=view"
+    },
     {
       "src": "^/$",
       "dest": "/api/dashboard.py"

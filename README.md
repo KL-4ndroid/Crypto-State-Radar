@@ -68,13 +68,20 @@ Raw data should be treated as append-only. Derived files can be regenerated.
 
 These thresholds are research defaults, not trading advice and can be tuned after measuring class balance and false-positive rates.
 
-## Implementation checkpoint (not deployed)
+## Implementation checkpoint (not released to production)
 
-Production remains at commit `5816d3a`. The local V2.4 work is a reviewable
-checkpoint, not a production release. See [checkpoint](docs/implementation-checkpoint.md)
+The previous production baseline was commit `5816d3a`. The V2.4.1 runtime and
+Dashboard changes are prepared for the user-authorized main release. See
+[release checklist](docs/production-release.md) for environment isolation,
+acceptance, scheduler activation and rollback. See [checkpoint](docs/implementation-checkpoint.md)
 for scope, acceptance evidence, remaining work, and safe continuation steps.
 See [continuation acceptance](docs/continuation-acceptance.md) for subsequent
 V2.4.1 fixes and real PostgreSQL/Redis, market and replay verification.
+See [Dashboard resource optimization](docs/dashboard-resource-optimization-implementation.md)
+for the manifest/ETag read contract, shared cache, browser lifecycle and isolated
+Neon/Vercel preview acceptance. Local implementation, preview verification and
+production release are recorded separately. The user subsequently authorized
+committing, pushing and merging this completed work to main.
 
 - [Verified production baseline](docs/implementation-baseline.md)
 - [Feature/model contract](docs/model-contract.md)
@@ -91,5 +98,6 @@ PostgreSQL and preview acceptance. See `.env.example` for configuration names.
 The existing hourly full-market scheduler has not been changed. The research
 worker now has an opt-in five-minute continuation/validation tick, disabled
 unless `CSR_RESEARCH_WORKER_ENABLED=true` and its isolated URL/token are set in
-GitHub. It is not active or deployed. Full scans select at most 25 deep candidates;
+GitHub. Activation is an explicit release step after the production API is verified.
+Full scans select at most 25 deep candidates;
 continuations can evaluate up to 100, with the same 40-second upstream deadline.

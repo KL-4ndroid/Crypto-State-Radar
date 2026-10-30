@@ -61,6 +61,7 @@ DASHBOARD_ENHANCEMENT = r"""
 
   async function runManualScan(){
     const token=input.value.trim();
+    const previousSnapshot=window.radarSnapshotId?.();
     if(!token){setStatus('請先輸入 CSR 掃描權杖。','bad');input.focus();return}
     running=true;scanBtn.disabled=true;scanBtn.classList.add('busy');runBtn.disabled=true;cancelBtn.disabled=true;input.disabled=true;runBtn.textContent='掃描中…';setStatus('正在重新抓取市場並執行分析與狀態判定，請保持此頁開啟。','busy');
     try{
@@ -75,9 +76,10 @@ DASHBOARD_ENHANCEMENT = r"""
       input.value='';
       const summary=payload.summary||{};
       if(summary.mode==='shadow'){setStatus('影子掃描已完成，正式市場狀態尚未切換。','ok');return}
-      if(summary.snapshot_published===false){setStatus('研究資料已保存，儀表板狀態待同步。','busy');return}
+      if(summary.snapshot_published===false){setStatus('研究資料已保存，儀表板狀態待同步。','busy');window.waitForRadarPublication?.(previousSnapshot);return}
       setStatus('分析與狀態判定已完成，正在載入最新結果。','ok');
-      if(window.refreshRadar){const loaded=await window.refreshRadar();if(!loaded)throw new Error('掃描已完成，但最新資料載入失敗，請重新整理。')}else refresh?.click();
+      if(window.waitForRadarPublication){const published=await window.waitForRadarPublication(previousSnapshot);if(!published){setStatus('分析已完成，公開版本待同步；畫面將短期檢查。','busy');return}}
+      else if(window.refreshRadar){const loaded=await window.refreshRadar({afterScan:true});if(!loaded)throw new Error('掃描已完成，但最新資料載入失敗，請重新整理。')}else refresh?.click();
       dlg.close();
     }catch(err){
       input.value='';setStatus(err?.message||'掃描失敗，請重新嘗試。','bad');
@@ -128,7 +130,7 @@ def _upstash_request(command: list[str]) -> object:
 
 
 def _load_state() -> dict[str, object]:
-    raw = _upstash_request(["GET", STATE_KEY])
+    raw = _upstash_request(["GET", os.getenv("CSR_STATE_KEY",STATE_KEY)])
     if raw is None:
         return {"schema_version": 1, "states": {}}
     payload = json.loads(str(raw))
@@ -138,9 +140,10 @@ def _load_state() -> dict[str, object]:
 
 
 def _save_state(payload: dict[str, object]) -> None:
-    result = _upstash_request(["SET", STATE_KEY, json.dumps(payload, separators=(",", ":"))])
-    if result != "OK":
-        raise RuntimeError("Upstash Redis SET did not return OK")
+    from src.dashboard_view import redis_publication
+    result = _upstash_request(redis_publication(os.getenv("CSR_STATE_KEY",STATE_KEY),payload))
+    if result != 1:
+        raise RuntimeError("Upstash publication was superseded")
 
 
 def _authorized(header: str | None, secret: str | None) -> bool:

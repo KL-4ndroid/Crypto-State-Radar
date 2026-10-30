@@ -45,12 +45,26 @@ class ResearchJournal:
                 raise
 
     def sql(self, query, args=()):
-        return self.db.execute(query.replace("?", "%s") if self.pg else query, args)
+        if self.pg:
+            # Transaction poolers reject timeout GUCs in the startup packet.
+            # SET LOCAL belongs to this transaction and cannot leak to another client.
+            from psycopg.pq import TransactionStatus
+            if self.db.info.transaction_status == TransactionStatus.IDLE:
+                with self.transaction():
+                    return self.db.execute(query.replace("?", "%s"), args)
+            return self.db.execute(query.replace("?", "%s"), args)
+        return self.db.execute(query, args)
 
     @contextmanager
     def transaction(self):
+        if self.pg:
+            with self.db.transaction():
+                self.db.execute("SET LOCAL statement_timeout=5000")
+                self.db.execute("SET LOCAL lock_timeout=2000")
+                yield
+            return
         try:
-            self.sql("BEGIN" if self.pg else "BEGIN IMMEDIATE")
+            self.sql("BEGIN IMMEDIATE")
             yield
             self.db.commit()
         except Exception:
@@ -181,8 +195,8 @@ def open_journal(root="data/journal"):
         label=os.getenv("CSR_RESEARCH_ENVIRONMENT")
         if label not in {"preview","production","test"}:
             raise RuntimeError("research database environment label is required")
-        return ResearchJournal(connection=psycopg.connect(url, autocommit=True, connect_timeout=8,
-            options="-c statement_timeout=5000 -c lock_timeout=2000"),initialize=False,expected_environment=label)
+        return ResearchJournal(connection=psycopg.connect(url, autocommit=True, connect_timeout=8),
+            initialize=False,expected_environment=label)
     if os.getenv("VERCEL"):
         raise RuntimeError("durable research database required; configure CSR_RESEARCH_DATABASE_URL")
     return ResearchJournal(Path(root)/"research.sqlite3")

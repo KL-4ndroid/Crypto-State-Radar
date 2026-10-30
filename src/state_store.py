@@ -17,8 +17,10 @@ from typing import Protocol
 
 try:
     from .state_machine import SymbolState, decode_snapshot, encode_snapshot
+    from .dashboard_view import publication, redis_publication
 except ImportError:  # Allow direct execution with PYTHONPATH=src
     from state_machine import SymbolState, decode_snapshot, encode_snapshot
+    from dashboard_view import publication, redis_publication
 
 DEFAULT_STATE_KEY = "crypto-state-radar:state:v1"
 _FILE_PUBLICATION_LOCK = threading.Lock()
@@ -41,8 +43,10 @@ class FileStateStore:
             self.states = decode_snapshot(payload)
 
     def _save(self) -> None:
+        payload=encode_snapshot(self.states)
+        payload["_dashboard"]=publication(payload)
         self.path.write_text(
-            json.dumps(encode_snapshot(self.states), ensure_ascii=False, indent=2),
+            json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
@@ -72,6 +76,7 @@ class FileStateStore:
                     raise RuntimeError("read view belongs to another research ledger")
                 if current.get("revision",0) > payload["revision"]:
                     return False
+                payload=dict(payload,_dashboard=publication(payload))
                 temporary = self.path.with_suffix(".tmp")
                 temporary.write_text(json.dumps(payload,ensure_ascii=False),encoding="utf-8")
                 temporary.replace(self.path)
@@ -178,10 +183,8 @@ class UpstashRestStateStore:
         return decode_snapshot(payload)
 
     def _save(self) -> None:
-        payload = json.dumps(encode_snapshot(self.states), ensure_ascii=False, separators=(",", ":"))
-        result = self._command("SET", self.key, payload)
-        if result != "OK":
-            raise RuntimeError("Upstash state SET did not return OK")
+        if not self.publish_snapshot(encode_snapshot(self.states)):
+            raise RuntimeError("Upstash state publication was superseded")
 
     def get(self, symbol: str) -> SymbolState:
         return self.states.get(symbol, SymbolState(symbol=symbol))
@@ -198,14 +201,7 @@ class UpstashRestStateStore:
         return dict(self.states)
 
     def publish_snapshot(self, payload: dict) -> bool:
-        # Outbox replay can race newer commits; compare and write atomically.
-        script = """local raw=redis.call('GET',KEYS[1]); local rev=0;
-        if raw then local old=cjson.decode(raw); rev=tonumber(old.revision or 0);
-        local incoming=cjson.decode(ARGV[2]);
-        if old.ledger_id and old.ledger_id~=incoming.ledger_id then return redis.error_reply('ledger identity mismatch') end end;
-        if rev>tonumber(ARGV[1]) then return 0 end;
-        redis.call('SET',KEYS[1],ARGV[2]); return 1"""
-        return self._command("EVAL",script,1,self.key,payload["revision"],json.dumps(payload,ensure_ascii=False,separators=(",",":"))) == 1
+        return self._command(*redis_publication(self.key,payload)) == 1
 
 
 def state_store_from_env(load: bool = True) -> StateStore:

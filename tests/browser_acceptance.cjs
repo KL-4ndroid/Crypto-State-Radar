@@ -12,29 +12,41 @@ const ago=min=>new Date(now.getTime()-min*60000).toISOString();
 const state=(symbol,extra={})=>({symbol,state:'LONG_READY',direction:'LONG',updated_at:ago(1),expires_at:ago(-240),evaluation_status:'fresh',ready_price:100,last_price:100,pump_score:70,dump_score:10,...extra});
 (async()=>{
  const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL||'chrome'});
- const page=await browser.newPage({viewport:{width:1440,height:900}});
+ const context=await browser.newContext({viewport:{width:1440,height:900}});
+ const page=await context.newPage();
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- let scanned=false,stateCalls=0,scanCalls=0;
- await page.route('**/*',async route=>{
+ let scanned=false,stateCalls=0,scanCalls=0,metaCalls=0,readFailure=false,version=1,mismatch=false;
+ const requests=[];
+ const routeHandler=async route=>{
   const request=route.request(),url=new URL(request.url());
   if(url.hostname!=='radar.local')return route.abort();
   if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:rendered.stdout});
+  if(url.pathname==='/dashboard-controller.js')return route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,'dashboard-controller.js'),'utf8')});
+  requests.push({path:url.pathname,page:request.frame().page()});
   let body={reachable:true,symbols:5,schema_version:1};
   if(url.pathname==='/api/scan'){
    assert.equal(request.method(),'POST');assert.equal(await request.headerValue('authorization'),'Bearer test-only');
-   scanned=true;scanCalls++;
+   scanned=true;version=2;scanCalls++;
    body={summary:{mode:'live',snapshot_published:true,enrichment_succeeded:1,pending:0}};
   }
-  if(url.pathname==='/api/state'){
-   stateCalls++;
-   body={model_version:'V2.4.0-alpha',states:{A:state('A',{last_price:scanned?999:100}),B:state('B',{expires_at:ago(1)}),C:state('C',{evaluation_status:'pending'}),D:state('D',{updated_at:ago(120)}),E:state('E',{state:'WATCH'})},last_scan:{processed_at:ago(1),enrichment_succeeded:2,pending:3,enrichment_errors:1}};
-   // The second refresh is in flight when manual scan completes.
-   if(stateCalls===2)await new Promise(r=>setTimeout(r,250));
+  if(url.pathname==='/api/dashboard-meta'){
+   metaCalls++;
+   if(readFailure)return route.fulfill({status:503,headers:{'Retry-After':'20'},contentType:'application/json',body:'{}'});
+   if(await request.headerValue('if-none-match')==='\"v'+version+'\"')return route.fulfill({status:304,headers:{ETag:'\"v'+version+'\"'}});
+   body={schema_version:1,snapshot_id:'v'+version,published_at:ago(1),health_checked_at:ago(1),last_successful_scan_at:ago(1),services:{market:'ok',state:'ok'}};
+   if(metaCalls===2)await new Promise(r=>setTimeout(r,250));
   }
-  return route.fulfill({contentType:'application/json',body:JSON.stringify(body)});
- });
+  if(url.pathname==='/api/dashboard-latest'){
+   stateCalls++;
+   body={schema_version:1,snapshot_id:mismatch?'wrong':'v'+version,model_version:'V2.4.0-alpha',states:{A:state('A',{last_price:scanned?999:100}),B:state('B',{expires_at:ago(1)}),C:state('C',{evaluation_status:'pending'}),D:state('D',{updated_at:ago(120)}),E:state('E',{state:'WATCH'})},last_scan:{processed_at:ago(1),enrichment_succeeded:2,pending:3,enrichment_errors:1}};
+   // The second refresh is in flight when manual scan completes.
+
+  }
+  return route.fulfill({headers:url.pathname==='/api/dashboard-meta'?{ETag:'\"'+body.snapshot_id+'\"'}:{},contentType:'application/json',body:JSON.stringify(body)});
+ };
+ await context.route('**/*',routeHandler);
  try{
-  await page.goto('http://radar.local/');
+  await page.goto('https://radar.local/');
   await page.waitForFunction(()=>document.querySelector('#priorityCount').textContent==='1 個');
   assert.equal(await page.locator('#signalValue').textContent(),'1');
   assert.match(await page.locator('#coverageStatus').textContent(),/待處理 3/);
@@ -45,10 +57,50 @@ const state=(symbol,extra={})=>({symbol,state:'LONG_READY',direction:'LONG',upda
   await page.locator('#manualScanToken').fill('test-only');
   await page.locator('#manualScanRun').click();
   await page.waitForFunction(()=>!document.querySelector('#manualScanDialog').open);
-  assert.equal(scanCalls,1);assert.ok(stateCalls>=3);
+  assert.equal(scanCalls,1);assert.equal(stateCalls,2);
   assert.equal(await page.evaluate(()=>app.items.find(x=>x.symbol==='A').last_price),999);
   assert.equal(await page.locator('#manualScanToken').inputValue(),'');
   assert.equal(await page.evaluate(()=>localStorage.length+sessionStorage.length),0);
+  const before=stateCalls,metaBefore=metaCalls;
+  await page.evaluate(()=>Promise.all([window.refreshRadar(),window.refreshRadar()]));
+  assert.equal(stateCalls,before);assert.equal(metaCalls,metaBefore+1);
+  readFailure=true;
+  assert.equal(await page.evaluate(()=>window.refreshRadar()),false);
+  assert.equal(await page.evaluate(()=>app.items.find(x=>x.symbol==='A').last_price),999);
+  assert.match(await page.locator('#updateNotice').textContent(),/保留/);
+  readFailure=false;
+  await page.evaluate(()=>window.refreshRadar());
+  assert.equal(requests.filter(x=>['/api/state','/api/state-health','/api/binance-health','/api/research'].includes(x.path)).length,0);
+  await page.waitForFunction(()=>!!releaseLeader);
+  const second=await page.context().newPage();
+  await second.goto('https://radar.local/');
+  await second.waitForFunction(()=>currentSnapshot?.snapshot_id==='v2');
+  const followerBefore=requests.filter(x=>x.page===second).length;
+  version=3;await page.evaluate(()=>window.refreshRadar());
+  await second.waitForFunction(()=>currentSnapshot?.snapshot_id==='v3');
+  assert.equal(requests.filter(x=>x.page===second).length,followerBefore);
+  await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{value:'hidden',configurable:true});document.dispatchEvent(new Event('visibilitychange'))});
+  await second.waitForFunction(()=>!!releaseLeader);
+  const hiddenBefore=requests.filter(x=>x.page===page).length;
+  assert.equal(await page.evaluate(()=>window.refreshRadar()),false);
+  assert.equal(requests.filter(x=>x.page===page).length,hiddenBefore);
+  await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{value:'visible',configurable:true});document.dispatchEvent(new Event('visibilitychange'))});
+  await page.waitForFunction(()=>!loadTask);
+  await second.close();
+  await page.locator('#search').fill('A');
+  await page.locator('#rows tr[data-symbol="A"]').click();
+  const listBeforeRace=stateCalls;
+  version=4;mismatch=true;
+  assert.equal(await page.evaluate(()=>window.refreshRadar()),false);
+  assert.equal(stateCalls,listBeforeRace+2);
+  assert.equal(await page.evaluate(()=>currentSnapshot.snapshot_id),'v3');
+  mismatch=false;await page.evaluate(()=>window.refreshRadar());
+  assert.equal(await page.locator('#search').inputValue(),'A');
+  assert.equal(await page.locator('#detailDialog').evaluate(el=>el.open),true);
+  assert.equal(await page.evaluate(()=>currentSnapshot.snapshot_id),'v4');
+  await page.locator('#closeDetail').click();
+  await page.locator('#search').fill('');
+
   assert.equal(errors.length,0,errors.join('\n'));
   const dir=path.join(root,'artifacts','verification');fs.mkdirSync(dir,{recursive:true});
   await page.screenshot({path:path.join(dir,'dashboard-desktop.png'),fullPage:true});
@@ -59,7 +111,38 @@ const state=(symbol,extra={})=>({symbol,state:'LONG_READY',direction:'LONG',upda
   assert.match(await page.locator('#detailGrid').textContent(),/最近成功評估/);
   await page.locator('#closeDetail').click();
   await page.screenshot({path:path.join(dir,'dashboard-mobile.png'),fullPage:true});
-  fs.writeFileSync(path.join(dir,'browser-result.json'),JSON.stringify({desktop:'1440x900',mobile:'390x844',stateCalls,scanCalls,pageErrors:errors,manualRefreshRace:'passed',expiredReady:'excluded',tokenPersistence:'none'},null,2));
+  const fallbackContext=await browser.newContext({viewport:{width:390,height:844}});
+  await fallbackContext.addInitScript(()=>{Object.defineProperty(navigator,'locks',{value:undefined});Math.random=()=>0.5});
+  await fallbackContext.route('**/*',routeHandler);
+  const lifecycle=await fallbackContext.newPage();
+  await lifecycle.clock.install({time:new Date()});
+  await lifecycle.goto('https://radar.local/');
+  await lifecycle.waitForFunction(()=>currentSnapshot&&!loadTask);
+  const count=()=>requests.filter(x=>x.page===lifecycle&&x.path==='/api/dashboard-meta').length;
+  const initialCount=count();
+  await lifecycle.evaluate(()=>{Object.defineProperty(document,'visibilityState',{value:'hidden',configurable:true});document.dispatchEvent(new Event('visibilitychange'))});
+  await lifecycle.clock.fastForward(121000);assert.equal(count(),initialCount);
+  await lifecycle.evaluate(()=>{Object.defineProperty(document,'visibilityState',{value:'visible',configurable:true});document.dispatchEvent(new Event('visibilitychange'))});
+  await lifecycle.waitForFunction(()=>!loadTask);assert.equal(count(),initialCount+1);
+  await lifecycle.evaluate(()=>{Object.defineProperty(navigator,'onLine',{value:false,configurable:true});window.dispatchEvent(new Event('offline'))});
+  await lifecycle.clock.fastForward(121000);assert.equal(count(),initialCount+1);
+  await lifecycle.evaluate(()=>{Object.defineProperty(navigator,'onLine',{value:true,configurable:true});window.dispatchEvent(new Event('online'))});
+  await lifecycle.waitForFunction(()=>!loadTask);assert.equal(count(),initialCount+2);
+  readFailure=true;
+  await lifecycle.clock.fastForward(60000);
+  await lifecycle.waitForFunction(()=>failureCount===1&&!loadTask);
+  const failedCount=count();
+  await lifecycle.clock.fastForward(19000);assert.equal(count(),failedCount);
+  readFailure=false;
+  await lifecycle.clock.fastForward(1000);
+  await lifecycle.waitForFunction(()=>failureCount===0&&!loadTask);
+  assert.equal(count(),failedCount+1);
+  const beforeRestore=count();
+  await lifecycle.evaluate(()=>{window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true}));window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}))});
+  await lifecycle.waitForFunction(()=>!loadTask);
+  assert.equal(count(),beforeRestore+1);
+  await fallbackContext.close();
+  fs.writeFileSync(path.join(dir,'browser-result.json'),JSON.stringify({desktop:'1440x900',mobile:'390x844',stateCalls,scanCalls,pageErrors:errors,manualRefreshRace:'passed',unchangedDownloads:0,healthRequests:0,failedRead:'retained',multiTab:'broadcast and leader handoff passed',hidden:'no periodic requests for 121 seconds',offline:'paused and resumed',retryAfter:'20 seconds respected',fallback:'independent polling without Web Locks',expiredReady:'excluded',tokenPersistence:'none'},null,2));
   console.log('Browser acceptance passed: desktop/mobile, freshness, manual-refresh race, token clearing.');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

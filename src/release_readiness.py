@@ -28,15 +28,17 @@ def inspect(stage="preview",connections=False):
     if connections and checks["database_configured"] and checks["database_environment_matches"]:
         try:
             import psycopg
-            with psycopg.connect(os.environ["CSR_RESEARCH_DATABASE_URL"],autocommit=True,connect_timeout=5,
-                    options="-c default_transaction_read_only=on -c statement_timeout=5000") as connection:
-                revision,ledger_id,label=connection.execute("SELECT revision,ledger_id,environment FROM csr_runtime WHERE id=1").fetchone()
-                insert,update,delete,ddl=connection.execute("SELECT has_table_privilege(current_user,'csr_records','INSERT'),has_table_privilege(current_user,'csr_records','UPDATE'),has_table_privilege(current_user,'csr_records','DELETE'),has_schema_privilege(current_schema(),'CREATE')").fetchone()
-                trigger=connection.execute("SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='csr_records'::regclass AND tgname='csr_immutable_record' AND tgenabled<>'D')").fetchone()[0]
-                retry_columns=connection.execute("SELECT next_attempt_at,lease_until,lease_token FROM csr_validation_jobs LIMIT 0").description
-                protected=not connection.execute("SELECT has_column_privilege(current_user,'csr_runtime','ledger_id','UPDATE') OR has_column_privilege(current_user,'csr_runtime','environment','UPDATE')").fetchone()[0]
-                report["connection_checks"]={"ledger_readable":revision>=0 and bool(ledger_id),"environment_bound":label==stage,"ledger_identity_protected":protected,"immutable_records_privileges":insert and not update and not delete,
-                    "runtime_has_no_schema_ddl":not ddl,"immutability_trigger":bool(trigger),"retry_schema":len(retry_columns)==3}
+            with psycopg.connect(os.environ["CSR_RESEARCH_DATABASE_URL"],autocommit=True,connect_timeout=8) as connection:
+                with connection.transaction():
+                    connection.execute("SET TRANSACTION READ ONLY")
+                    connection.execute("SET LOCAL statement_timeout=5000")
+                    revision,ledger_id,label=connection.execute("SELECT revision,ledger_id,environment FROM csr_runtime WHERE id=1").fetchone()
+                    insert,update,delete,ddl=connection.execute("SELECT has_table_privilege(current_user,'csr_records','INSERT'),has_table_privilege(current_user,'csr_records','UPDATE'),has_table_privilege(current_user,'csr_records','DELETE'),has_schema_privilege(current_schema(),'CREATE')").fetchone()
+                    trigger=connection.execute("SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='csr_records'::regclass AND tgname='csr_immutable_record' AND tgenabled<>'D')").fetchone()[0]
+                    retry_columns=connection.execute("SELECT next_attempt_at,lease_until,lease_token FROM csr_validation_jobs LIMIT 0").description
+                    protected=not connection.execute("SELECT has_column_privilege(current_user,'csr_runtime','ledger_id','UPDATE') OR has_column_privilege(current_user,'csr_runtime','environment','UPDATE')").fetchone()[0]
+                    report["connection_checks"]={"ledger_readable":revision>=0 and bool(ledger_id),"environment_bound":label==stage,"ledger_identity_protected":protected,"immutable_records_privileges":insert and not update and not delete,
+                        "runtime_has_no_schema_ddl":not ddl,"immutability_trigger":bool(trigger),"retry_schema":len(retry_columns)==3}
         except Exception as exc:
             # Never include exception messages, DSNs, tokens or environment values.
             report["connection_checks"]={"error_type":type(exc).__name__}

@@ -38,7 +38,7 @@ def postgres():
             admin.execute(sql.SQL("GRANT "+privileges+" ON {} TO {}").format(sql.Identifier(table),sql.Identifier(role)))
         admin.execute(sql.SQL("GRANT UPDATE(revision,payload) ON csr_runtime TO {}").format(sql.Identifier(role)))
         def open_store():
-            connection=psycopg.connect(dsn,autocommit=True,options=f"-c search_path={schema} -c statement_timeout=5000 -c lock_timeout=2000")
+            connection=psycopg.connect(dsn,autocommit=True,options=f"-c search_path={schema}")
             connection.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
             connections.append(connection)
             return ResearchJournal(connection=connection,initialize=False,expected_environment="test")
@@ -53,6 +53,14 @@ def postgres():
 def test_postgres_migration_roles_rollback_and_concurrent_commits(postgres):
     open_store,admin,psycopg=postgres
     first,second=open_store(),open_store()
+    # Pooler-compatible timeouts apply to every query/transaction and do not
+    # remain on a server connection when the transaction is returned to a pool.
+    baseline=first.db.execute("SHOW statement_timeout").fetchone()[0]
+    assert first.sql("SHOW statement_timeout").fetchone()[0]=='5s'
+    assert first.db.execute("SHOW statement_timeout").fetchone()[0]==baseline
+    with first.transaction():
+        assert first.sql("SHOW statement_timeout").fetchone()[0]=='5s'
+        assert first.sql("SHOW lock_timeout").fetchone()[0]=='2s'
     signal={"signal_id":"s","observed_at":"2026-01-01T08:00:00+08:00","entry_price":100}
     first.commit_cycle(0,{"states":{}},[("signals","s",signal)])
     assert first.load()[1]["ledger_id"]
@@ -139,9 +147,13 @@ def test_postgres_outbox_and_real_redis_atomic_publication(postgres,monkeypatch)
         def publish(payload):barrier.wait(timeout=5);return store.publish_snapshot(payload)
         with ThreadPoolExecutor(max_workers=2) as executor:list(executor.map(publish,[two,one]))
         assert json.loads(redis_command("GET",key))["revision"]==2
+        public_before=redis_command("GET",key+":dashboard-meta")
+        view_before=json.loads(redis_command("GET",key+":dashboard-latest"))
+        assert json.loads(public_before)["snapshot_id"]==view_before["snapshot_id"]
         with pytest.raises(RuntimeError):store.publish_snapshot(dict(two,revision=99,ledger_id="foreign"))
         assert json.loads(redis_command("GET",key))["ledger_id"]==two["ledger_id"]
         assert not store.publish_snapshot(one)
+        assert redis_command("GET",key+":dashboard-meta")==public_before
         from src import run_cycle
         monkeypatch.setenv("CSR_SCAN_MODE","live")
         monkeypatch.delenv("VERCEL_ENV",raising=False)
@@ -154,7 +166,21 @@ def test_postgres_outbox_and_real_redis_atomic_publication(postgres,monkeypatch)
         assert summary["snapshot_published"] and summary["revision"]==3 and summary["signals"]==1
         published=json.loads(redis_command("GET",key))
         assert published["states"]["A"]["state"]=="LONG_READY"
+        meta=json.loads(redis_command("GET",key+":dashboard-meta"))
+        view=json.loads(redis_command("GET",key+":dashboard-latest"))
+        assert meta["snapshot_id"]==view["snapshot_id"] and view["states"]["A"]["state"]=="LONG_READY"
+        assert "ledger_id" not in view
         assert len(journal.read("signals"))==1
+        # The Dashboard contract also works with the schema-1 writer, without
+        # migrating or enabling the new research runtime on a legacy deployment.
+        from src.state_machine import SymbolState
+        legacy=UpstashRestStateStore(store.base_url,store.token,key=key+":legacy",load=False)
+        legacy.put_all({"OLD":SymbolState(symbol="OLD",state="WATCH",last_price=100)})
+        legacy_meta=json.loads(redis_command("GET",key+":legacy:dashboard-meta"))
+        legacy_view=json.loads(redis_command("GET",key+":legacy:dashboard-latest"))
+        assert legacy_meta["snapshot_id"]==legacy_view["snapshot_id"]
+        assert legacy_view["states"]["OLD"]["last_price"]==100
+        assert legacy_meta["scan_status"]=="unknown"
     finally:
-        redis_command("DEL",key)
+        redis_command("DEL",key,key+":dashboard-meta",key+":dashboard-latest",key+":legacy",key+":legacy:dashboard-meta",key+":legacy:dashboard-latest")
         server.shutdown();server.server_close();thread.join(timeout=5)

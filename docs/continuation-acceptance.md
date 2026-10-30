@@ -1,5 +1,9 @@
 # Checkpoint 4f50dd3 後續驗收 — 2026-10-30
 
+> 下列為建立雲端資源前的 checkpoint 紀錄。後續 Neon preview、pooler 修正、
+> Dashboard 共用發布／快取及 sin1 實測進度，見
+> [Dashboard 實作與驗收](dashboard-resource-optimization-implementation.md)。production 尚未切換。
+
 本輪完成可在本機執行的剩餘實作與隔離驗收；未推送或部署，未建立雲端資料庫，未切換 production。
 歷史 checkpoint 的狀態保留作為當時紀錄，以本文件補充目前進度。
 

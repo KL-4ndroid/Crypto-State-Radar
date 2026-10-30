@@ -1,11 +1,11 @@
-name: Research Worker (isolated acceptance)
+name: Research Worker (bounded maintenance)
 on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       operation:
-        description: Bounded research operation (uses configured isolated URL)
+        description: Bounded research operation (uses configured environment URL)
         type: choice
         options: [tick, drain, validate, publish]
         default: tick
@@ -13,7 +13,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: research-worker-acceptance
+  group: crypto-state-radar-research-worker
   cancel-in-progress: false
 jobs:
   worker:
