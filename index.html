@@ -64,7 +64,7 @@ th{font-size:14px}td{font-size:16px;padding:18px}.chip{font-size:15px;padding:9p
 <body>
 <main class="shell">
 <header class="topbar">
-  <div class="brand"><div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 16.5 7.4 12l3.2 3.1L16.8 8 21 11.6"/><path d="M17 8h4v4"/></svg></div><div><h1>合約市場雷達</h1><div class="subtitle"><span class="live-dot">研究監控中</span><span class="hide-mobile">每小時掃描一次</span></div></div></div>
+  <div class="brand"><div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 16.5 7.4 12l3.2 3.1L16.8 8 21 11.6"/><path d="M17 8h4v4"/></svg></div><div><h1>合約市場雷達</h1><div class="subtitle"><span class="live-dot">研究監控中</span><span class="hide-mobile">每小時啟動一輪</span></div></div></div>
   <div class="actions"><button id="refreshBtn" class="btn" type="button" aria-label="重新整理"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 11a8 8 0 1 0-2.34 5.66"/><path d="M20 4v7h-7"/></svg><span>重新整理</span></button></div>
 </header>
 <div class="update-status"><span id="marketDataTime">市場資料時間 —</span><span id="dataAgeNotice" class="data-age-notice" role="status" aria-live="polite" hidden></span><span id="updateNotice" role="status" aria-live="polite">正在檢查公開版本…</span></div>
@@ -82,7 +82,7 @@ th{font-size:14px}td{font-size:16px;padding:18px}.chip{font-size:15px;padding:9p
   <article class="panel metric"><div class="metric-top"><span>最近市場採集</span><i id="binanceDot" class="status-dot"></i></div><div id="binanceValue" class="metric-value">—</div><div id="binanceFoot" class="metric-foot">讀取採集紀錄中</div></article>
   <article class="panel metric"><div class="metric-top"><span>狀態儲存</span><i id="stateDot" class="status-dot"></i></div><div id="trackedValue" class="metric-value">—</div><div id="stateFoot" class="metric-foot">讀取狀態資料</div></article>
   <article class="panel metric"><div class="metric-top"><span>需要先查看</span><span class="muted">警示以上</span></div><div id="signalValue" class="metric-value">—</div><div id="signalFoot" class="metric-foot">等待市場狀態</div></article>
-  <article class="panel metric"><div class="metric-top"><span>更新頻率</span><span class="muted">固定</span></div><div class="metric-value">1 小時</div><div class="metric-foot">整點重新掃描完整市場</div></article>
+  <article class="panel metric"><div class="metric-top"><span>全市場觀察</span><span class="muted">分批完成</span></div><div class="metric-value">1 小時</div><div class="metric-foot">每小時 07 分啟動；每 5 分鐘續跑與驗證</div></article>
 </section>
 <details class="subdetails"><summary>訊號階段與市場分布</summary><div class="subdetails-content"><div id="lifecycleRail" class="rail"></div></div></details></div></details>
 <section class="panel market">

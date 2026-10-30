@@ -50,7 +50,7 @@ function applySnapshot(snapshot){
   const issues=(scan?.errors||0)+(scan?.enrichment_errors||0);
   const overview=$('#scanOverview');
   if(overview)overview.textContent=scan
-      ?`本輪完整分析 ${scan.enrichment_succeeded??0} 個 · ${scan.pending??0} 個待續跑${issues?` · ${issues} 個資料異常，請展開掃描資訊`:''}`
+      ?`最近一批分析 ${scan.enrichment_succeeded??0} 個 · ${scan.pending??0} 個待續跑${issues?` · ${issues} 個資料異常，請展開掃描資訊`:''}`
       :'掃描進度待確認；請留意各標的最近評估時間。';
   const latest=app.items.reduce((best,x)=>!x.updated_at?best:(!best||new Date(x.updated_at)>new Date(best)?x.updated_at:best),null);
   $('#heroUpdated').textContent=clock(latest);$('#lastUpdated').textContent=latest?`最近標的評估 ${date(latest)}`:'尚未產生市場狀態';

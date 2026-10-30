@@ -1,7 +1,7 @@
 """Dashboard response handler.
 
-Keeps the public dashboard on one countdown source aligned with the GitHub
-Actions schedule (minute 7 of every hour), while reusing the existing manual
+Keeps the public dashboard on one countdown source aligned with the Upstash
+full-scan schedule (minute 7 of every hour), while reusing the existing manual
 scan UI enhancement from api.index.
 """
 from __future__ import annotations
