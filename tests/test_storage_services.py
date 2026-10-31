@@ -15,6 +15,33 @@ from src.state_store import UpstashRestStateStore
 pytestmark=pytest.mark.skipif(os.getenv("CSR_LOCAL_STORAGE_ACCEPTANCE")!="1",reason="run tools/storage_acceptance.py for isolated services")
 
 
+def test_v33_journal_archive_global_quota_restore_and_runtime_isolation(postgres):
+    from src.v33.journal_archive import JournalArchive
+    open_store,admin,psycopg=postgres
+    a,b=open_store(),open_store()
+    original=a.load()
+    def upload(pair):
+        journal,body=pair
+        try:
+            return JournalArchive(journal,max_objects=1).put(body)
+        except OSError:
+            return None
+    with admin.transaction():
+        admin.execute('SELECT id FROM csr_runtime WHERE id=1 FOR UPDATE')
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            rows=list(pool.map(upload,[(a,b'first'),(b,b'second')]))
+    assert sum(row is not None for row in rows)==1
+    index=next(i for i,row in enumerate(rows) if row is not None)
+    blob=rows[index]
+    restored=JournalArchive(open_store()).read(blob['sha256'])
+    assert restored==(b'first' if index==0 else b'second')
+    assert JournalArchive(a).stats()['objects']==1
+    assert a.load()==original
+    assert JournalArchive(a,max_objects=1).put(restored)==blob
+    with pytest.raises(psycopg.Error):
+        admin.execute("DELETE FROM csr_records WHERE kind='v33:raw:archive:gzip-1'")
+
+
 @pytest.fixture
 def postgres():
     psycopg=pytest.importorskip("psycopg")
