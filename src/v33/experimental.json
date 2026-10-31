@@ -1,0 +1,27 @@
+{
+  "rule_id": "distribution-contract-reference",
+  "rule_version": "V3.3-EXPERIMENTAL-0",
+  "status": "EXPERIMENTAL",
+  "hypothesis": "Reference policy for contract testing; component producers and predictive validity are not established.",
+  "feature_dependencies": ["F1.*", "F2.*", "F3.*", "F4.*", "F5.*", "return_24h", "return_24h_p95", "return_7d", "quote_volume_24h", "quote_volume_median_30d", "oi_15m", "oi_1h", "oi_4h", "oi_1h_p75", "oi_4h_p75", "efficiency_collapse_score", "efficiency_recovery", "oi_acceleration_positive", "flow_positive", "new_high", "oi_15m_retreat_confirmed", "perp_cvd", "spot_cvd", "taker_ratio", "lower_high_candidate", "lower_high_confirmed", "support_rejection_confirmed", "price_breakdown_confirmed", "invalidate_setup", "model_maturity", "dynamic_quality", "execution_quality", "squeeze_risk", "close_5m", "bar_5m", "bar_15m"],
+  "training_period": null, "validation_period": null, "test_period": null,
+  "metrics": {}, "promotion_decision": null,
+  "parameters": {
+    "family_valid_coverage": 0.5, "strong_family_score": 60,
+    "family_weights": {"F1":25,"F2":25,"F3":25,"F4":15,"F5":10},
+    "component_weights": {
+      "F1":{"efficiency":35,"lower_high":30,"rejection":20,"return_deceleration":15},
+      "F2":{"oi_deceleration":30,"oi_15m_retreat":30,"oi_1h_retreat":25,"oi_4h_retreat":15},
+      "F3":{"perp_cvd_reversal":40,"taker_reversal":30,"spot_divergence":30},
+      "F4":{"funding_percentile":35,"top_position_share_decline":35,"account_long_increase":15,"premium":15},
+      "F5":{"btc_regime":50,"alt_breadth":50}
+    },
+    "phase": {"pump_7d_return":50,"volume_multiple":2,"pump_confirm":2,"pump_reset":3,"leverage_confirm":2,"saturation_score":75,"saturation_confirm":2,"recovery_confirm":2,"distribution_score":65,"distribution_f1":50,"recovery_score":50,"leverage_f2":60,"markdown_f1":60,"markdown_f2":60,"retreat_taker":0.95,
+      "confirmation_observations":{"pump":{"feature":"bar_5m","seconds":300},"pump_reset":{"feature":"bar_15m","seconds":900},"leverage":{"feature":"bar_5m","seconds":300},"saturation":{"feature":"bar_15m","seconds":900},"saturation_recovery":{"feature":"bar_15m","seconds":900},"distribution_recovery":{"feature":"bar_15m","seconds":900}}},
+    "trade": {"setup_score":70,"ready_score":75,"strong_families":3,"ready_dynamic":60,"ready_execution":50,"trigger_dynamic":75,"trigger_execution":60,"setup_taker":0.95,"trigger_taker":0.9,"new_listing_family":70,"new_listing_dynamic":85,"new_listing_execution":70,"ttl_seconds":14400,"allow_new_listing_reduced":true},
+    "gate": {"fast_core_drift_seconds":180,"squeeze_on":70,"squeeze_off":50,"squeeze_clear_observations":2,"fast_core":["oi_15m","oi_1h","close_5m"]},
+    "feature_hypotheses": {"oi_percentile":75,"pump_percentile":95,"efficiency_percentile":25,"breakdown_atr_buffer":0.1,"swing_window_minutes":30},
+    "quality_weights": {"freshness":0.30,"alignment":0.25,"completeness":0.30,"source_integrity":0.15},
+    "bootstrap": {"status":"NOT_VALIDATED","version":"BOOTSTRAP_V0","stop_atr":1.5,"target_atr":2.0,"horizon_hours":12}
+  }
+}
