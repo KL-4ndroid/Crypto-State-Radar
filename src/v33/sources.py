@@ -20,8 +20,8 @@ class SourceContract:
     timestamp_unit: str
     documentation: str = OFFICIAL_MARKET_DOC
     missing_behavior: str = 'UNAVAILABLE_WITH_REASON; never zero-fill'
-    contract_version: str = 'binance-source-contract-1'
-    collector_status: str = 'NOT_CONNECTED_TO_V33'
+    contract_version: str = 'binance-source-contract-2'
+    collector_status: str = 'NOT_ENABLED_IN_PRODUCTION'
 
 
 SOURCES = {c.source:c for c in [
@@ -34,9 +34,11 @@ SOURCES = {c.source:c for c in [
     SourceContract('premium_mark_index','/fapi/v1/premiumIndex','NONE_DOCUMENTED','CURRENT_SNAPSHOT','SNAPSHOT_POLL_5m','RESPONSE_TIME','ms'),
     SourceContract('premium_history','/fapi/v1/premiumIndexKlines','NONE_DOCUMENTED','VERIFY_BACKFILL_PER_SYMBOL','5m','CANDLE_CLOSE','ms'),
     SourceContract('spot_aggtrades','https://api.binance.com/api/v3/aggTrades','NONE_DOCUMENTED','BOUNDED_REST_PLUS_DAILY_ARCHIVE','EVENT','TRADE_TIME','ms',PUBLIC_DATA_DOC),
-    SourceContract('perp_aggtrades','/fapi/v1/aggTrades','NONE_DOCUMENTED','BOUNDED_REST_PLUS_DAILY_ARCHIVE','EVENT','TRADE_TIME','ms',PUBLIC_DATA_DOC),
+    SourceContract('perp_aggtrades','/fapi/v1/aggTrades','NONE_DOCUMENTED','LATEST_48H_REST_PLUS_DAILY_ARCHIVE','EVENT','TRADE_TIME','ms',PUBLIC_DATA_DOC),
     SourceContract('spot_archive_2025_plus','https://data.binance.vision/data/spot','NONE','DAILY_MONTHLY_FILES_REVISIONED','NEXT_DAY_EXACT_RELEASE_UNKNOWN','TRADE_TIME','us',PUBLIC_DATA_DOC),
     SourceContract('perp_archive','https://data.binance.vision/data/futures/um','NONE','DAILY_MONTHLY_FILES_REVISIONED','NEXT_DAY_EXACT_RELEASE_UNKNOWN','TRADE_TIME','ms',PUBLIC_DATA_DOC),
+    SourceContract('spot_aggtrades_5m','DERIVED_FROM_SPOT_AGGTRADES','NONE','OWNED_ARCHIVE','5m_WHEN_COMPLETE','WINDOW_END','ms',PUBLIC_DATA_DOC,collector_status='LOCAL_PILOT_DERIVED'),
+    SourceContract('perp_aggtrades_5m','DERIVED_FROM_PERP_AGGTRADES','NONE','OWNED_ARCHIVE','5m_WHEN_COMPLETE','WINDOW_END','ms',PUBLIC_DATA_DOC,collector_status='LOCAL_PILOT_DERIVED'),
     SourceContract('smart_signal','UNCONFIRMED_PUBLIC_DEVELOPER_ENDPOINT','UNCONFIRMED','UNCONFIRMED','UNCONFIRMED','UNKNOWN','ms',
         'https://www.binance.com/en/support/faq/detail/197ed63fbca34124bae53d8e6d4c9d29',collector_status='OPTIONAL_UNAVAILABLE')
 ]}
