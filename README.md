@@ -1,6 +1,12 @@
 # Crypto State Radar
 
-Binance USDT-M perpetual futures research project for V2.2 execution states and V2.3 early-warning / backtest research.
+Binance USDT-M perpetual futures research project. The **v3.3.0 research release** includes isolated causal research contracts, dual state machines, replay tools and a bounded local acquisition pilot.
+
+## v3.3.0 research release
+
+Released research scope: PRs [#20](https://github.com/KL-4ndroid/Crypto-State-Radar/pull/20) and [#21](https://github.com/KL-4ndroid/Crypto-State-Radar/pull/21). All supplied V3.3 rules remain **EXPERIMENTAL / PRE_VALIDATION**. The production signal model remains **V2.4.1-alpha**; the release does not activate V3 collection, apply its production migrations or promote a Champion.
+
+See [release notes](docs/v33/09_research_release.md) for delivered features, verification and remaining work, and [current status](docs/current-status.md) for the production system. This is a release of the existing research work, not a completed or validated V3.3 trading model.
 
 ## Goals
 
@@ -68,7 +74,9 @@ Raw data should be treated as append-only. Derived files can be regenerated.
 
 These thresholds are research defaults, not trading advice and can be tuned after measuring class balance and false-positive rates.
 
-## Implementation checkpoint (not released to production)
+## Historical V2 implementation checkpoint
+
+The following checkpoint records earlier release preparation. Current release status is documented above and in [current status](docs/current-status.md).
 
 The previous production baseline was commit `5816d3a`. The V2.4.1 runtime and
 Dashboard changes are prepared for the user-authorized main release. See
