@@ -30,10 +30,23 @@ Bar 必填：`symbol`、`open_time`、`close_time`、`open`、`high`、`low`、`
 
 ## 尚待完成的完整範圍
 
-1. 遠端 raw backend、容量與權限、checksum 還原，以及既有 scheduler 的有界持續採集整合。儲存預算選擇已詢問使用者，尚未取得答覆。
+1. 遠端 raw backend、容量與權限、checksum 還原，以及既有 scheduler 的有界持續採集整合。使用者已選定沿用既有服務與免費額度；小型 journal archive adapter 已完成（下節），尚未在雲端配置或啟用持續採集。
 2. 具有版本／lineage 的研究 feature producers 與 explicit experimental formulas、跨來源時間對齊、新上市／下市 universe 與完整 event dataset。
 3. 基於真實完整資料的 nested walk-forward、ablation、Champion vs Challenger 比較與不確定性報告。
 4. V3 Dashboard 與 SHADOW 路徑端到端驗收。
 5. 主規格 P8–P10 的持續 shadow、execution validation、guarded release。時間窗口尚未累積、模型未獲驗證時保持未通過。
 
 目前本機 data 只有 pilot 的 9 個 gzip raw objects 與一個 SQLite journal，不足以證明代表性歷史、持續完整性或 OOS 優勢。合成測試驗證的是工程行為，不是研究成效。此開發分支沒有修改或部署正式 runtime。
+
+## 免費額度方向：有界 journal archive
+
+`src/v33/journal_archive.py` 沿用既有 ResearchJournal / `csr_records`，不新增服務或 schema；SQLite 用於本機，PostgreSQL 可用於 durable cloud storage。Vercel 上拒絕 SQLite。此 adapter 僅供小範圍研究，不能把大量逐筆 archive 長期存入免費 Neon。
+
+- 固定全域 archive kind，跨 run 共用預算。預設至多 **16 MiB logical encoded payload、10,000 objects、256 KiB uncompressed/object**；呼叫端可以調低，不能調高硬上限。
+- gzip + base64、SHA-256 content identity、去重、bounded decompression、checksum restore；傳回 metadata 不含 raw body。
+- SQLite transaction / PostgreSQL advisory transaction lock 序列化 check + insert，不鎖正式 runtime row。不刪除資料、不自動增加 quota、不修改模型或 Redis publication。
+- quota 為 payload 字元數（ASCII encoded payload），不是實體 DB size、索引、WAL、運算或供應商帳單。上線前仍須量測現有資料庫實際用量與可用免費額度；此上限不是免費保證。
+- acquisition worker 偵測已滿時不呼叫來源；upload 發生 OSError 時保留失敗證據與 cursor，停止本輪後續來源，避免容量耗盡後繼續抓取。
+- `tools/v33_acquire.py --archive-backend journal` 可在明確本機 journal 測試此 backend；預設 file 行為保留。這個 CLI 尚未連到雲端 credentials，且不啟動排程。
+
+真正 disposable PostgreSQL 驗收：**1 passed、5 deselected**。最小權限 runtime role 能寫入、跨 connection restore、並行最多存一個 object、滿額去重仍可重用、immutable history；鎖定正式 runtime row 不阻塞 archive。驗收報告：忽略版控的 `artifacts/verification/v33-journal-archive-storage.json`。這是本機真 PG，不是假稱已驗證 Neon 或正式部署。
