@@ -17,6 +17,20 @@ except ImportError:
 
 
 def work(operation, root="data/journal", operation_id=None):
+    from src.product import product_mode
+    if product_mode()=='bsc':
+        from src.bsc.scanner import stream_for
+        journal=open_journal(root)
+        try:
+            stream=stream_for(journal)
+            revision,payload=stream.load()
+            if operation=='status':
+                return {'product':'bsc','revision':revision,'status':payload.get('status','NOT_STARTED'),
+                    'cursor':payload.get('cursor'),'lag_blocks':payload.get('lag_blocks'),
+                    'projects':len(payload.get('projects',{})),'execution_enabled':False,
+                    'last_attempt_at':payload.get('last_attempt_at'),'capacity':stream.stats()}
+            raise RuntimeError('Futures worker operation is retired in BSC mode')
+        finally:journal.close()
     if operation == "drain":
         try:
             from .run_cycle import run

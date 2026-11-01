@@ -68,6 +68,8 @@ def _candles(symbol: str, start: datetime, end: datetime) -> list[dict[str, Any]
 
 def run_validation_cycle(store: JsonlResearchStore | None = None,
                          now: datetime | None = None) -> dict[str, Any]:
+    from src.product import require_futures
+    require_futures()
     store = store or JsonlResearchStore()
     now = now or datetime.now(timezone.utc)
     signals = [] if hasattr(store,"due_jobs") else list(store.read("signals"))

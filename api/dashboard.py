@@ -33,6 +33,9 @@ def _manual_scan_enhancement_without_countdown() -> str:
 
 
 def _render_dashboard() -> bytes:
+    import os
+    if os.getenv('CSR_PRODUCT_MODE')=='bsc':
+        return DASHBOARD_FILE.with_name('bsc.html').read_bytes()
     html = DASHBOARD_FILE.read_text(encoding="utf-8")
     html = html.replace("<div class=\"radar-caption\" id=\"nextScanFoot\">下次整點</div>", "<div class=\"radar-caption\" id=\"nextScanFoot\">下次自動掃描</div>", 1)
     html = html.replace("<div class=\"metric-foot\">整點重新掃描完整市場</div>", "<div class=\"metric-foot\">每小時第 7 分鐘重新掃描完整市場</div>", 1)

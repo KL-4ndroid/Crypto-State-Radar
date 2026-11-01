@@ -50,6 +50,8 @@ def _enrichment_candidates(snapshots, previous, now):
 
 
 def run(symbols=None, root="data/journal", drain=False, operation_id=None):
+    from src.product import require_futures
+    require_futures()
     # Resolve before opening storage or fetching market data. Unknown/unreleased
     # algorithms fail explicitly rather than falling back to a different model.
     algorithm = resolve(os.getenv('CSR_ALGORITHM_ID', 'radar-v2'), target='live')

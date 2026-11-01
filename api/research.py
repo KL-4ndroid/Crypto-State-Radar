@@ -20,6 +20,8 @@ class handler(ScanHandler):
             self._send(503,{"configured":True,"error_type":type(exc).__name__})
 
     def do_POST(self):
+        if os.getenv('CSR_PRODUCT_MODE')=='bsc':
+            self._send(410,{'error':'futures_worker_retired','product':'bsc'});return
         secret = os.getenv("CSR_WORKER_TOKEN")
         if not secret:
             self._send(503,{"error":"worker_not_configured"}); return

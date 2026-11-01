@@ -13,7 +13,7 @@
       "maxDuration": 60
     },
     "api/dashboard.py": {
-      "includeFiles": "{api/index.py,index.html}"
+      "includeFiles": "{api/index.py,index.html,bsc.html}"
     },
     "api/index.py": {
       "includeFiles": "{data/journal/**,index.html}"
@@ -28,9 +28,17 @@
     },
     "api/dashboard_data.py": {
       "includeFiles": "{src/dashboard_view.py,api/index.py}"
+    },
+    "api/bsc.py": {
+      "includeFiles": "src/**",
+      "maxDuration": 60
     }
   },
   "routes": [
+    {
+      "src": "^/api/bsc$",
+      "dest": "/api/bsc.py"
+    },
     {
       "src": "^/api/scheduler$",
       "dest": "/api/scheduler.py"
