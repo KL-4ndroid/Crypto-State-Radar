@@ -41,7 +41,6 @@ def main():
             print(json.dumps({'revision':revision,'cursor':payload.get('cursor'),
                 'projects':len(payload.get('projects',{})),'capacity':stream.stats(),'execution_enabled':False}));return
         if args.command=='publish':
-            from src.bsc.scanner import publish_current
             print(json.dumps({'published':publish_current(journal),'revision':stream_for(journal).load()[0]}));return
         lock=None
         if args.command=='watch':

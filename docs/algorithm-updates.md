@@ -4,7 +4,15 @@
 
 演算法現在透過 `src/algorithms` 與應用程式連接。正式掃描和 V2 離線重播共用 `V2Algorithm`；V3 的既有 `ContractStore` 共用 `V33Algorithm`。這次抽離沿用原本 scoring、lifecycle、因果 feature store、交易、去重及 journal，不重寫另一套模型。
 
-**目前正式訊號仍為 V2.4.1-alpha。V3.3 是可替換的研究模型，尚未具備正式切換資格。** 介面完成不等於缺少的 feature producers、持續採集、真實 OOS、shadow 或 execution validation 已完成。完整缺項見 [V3.3 進度](v33/10_completion_progress.md)。
+**現行正式產品已切換為 BSC 只讀雷達（BSC-READONLY-1），沒有錢包或交易訊號。以下 V2／V3 說明保留作歷史介面文件；Futures 主功能已退役。** 介面完成不等於缺少的 feature producers、持續採集、真實 OOS、shadow 或 execution validation 已完成。完整缺項見 [V3.3 進度](v33/10_completion_progress.md)。
+
+## 現行 BSC 演算法更新
+
+- 純判斷器在 `src/algorithms/bsc.py`。修改判斷時增加 model_version，保留特徵契約、程式指紋與狀態版本；不能沿用舊 stream 的狀態直接接新版本。
+- 新版本先以已保存 evidence 做隔離 replay，再檢查 preview 的判定理由、資料缺失與公開畫面。變更資料來源或投影時也要版本化；僅改 adapter 不會自動補上新來源。
+- 目前採集器明確使用 BSC discovery adapter，沒有任意程式載入或自動交易開關；替換其他 adapter 時需審查其輸入契約與呼叫綁定，不能只改環境變數。
+- 變更 watchlist 要另建 stream／重播。觀察名單不是買入白名單；不得宣稱新地址已具備舊期間的完整覆蓋。
+- 完整操作及限制見 [BSC 轉型文件](bsc/transition.md)。舊版回測或運行驗收不會自動成為 BSC 新模型的成效證據。
 
 ## 模組與責任
 
@@ -75,4 +83,4 @@ V2 參數目前仍由 `model_contract.py`／engine 管理，**尚無任意 JSON 
 
 回退時使用已驗證的舊部署及其對應 snapshot／儲存命名空間，重播原本 outbox。不要把新模型 head 塞回舊模型，也不要刪掉歷史或重跑市場採集以修補回退。舊 worker 的 lease 與未完成工作必須先確認不會寫入新儲存。
 
-目前 `CSR_ALGORITHM_ID` 預設 `radar-v2`，只有它通過 live selection。未知 ID／尚未開放的 V3 在開啟 journal 或呼叫 Binance 前失敗；release readiness 也會列為不通過。`/api/research` 可讀到目前 snapshot 的 algorithm identity；舊 snapshot 尚未自然更新前該欄位為 null。
+歷史 Futures 入口的 `CSR_ALGORITHM_ID` 預設為 `radar-v2`；現行正式產品另設定 `CSR_PRODUCT_MODE=bsc` 與 `CSR_ALGORITHM_ID=bsc-discovery`，不使用該 Futures live 路徑。未知 ID／尚未開放的 V3 在開啟 journal 或呼叫 Binance 前失敗；release readiness 也會列為不通過。`/api/research` 可讀到目前 snapshot 的 algorithm identity；舊 snapshot 尚未自然更新前該欄位為 null。
