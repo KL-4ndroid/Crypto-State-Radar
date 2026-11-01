@@ -28,16 +28,12 @@
     },
     "api/dashboard_data.py": {
       "includeFiles": "{src/dashboard_view.py,api/index.py}"
-    },
-    "api/bsc.py": {
-      "includeFiles": "src/**",
-      "maxDuration": 60
     }
   },
   "routes": [
     {
       "src": "^/api/bsc$",
-      "dest": "/api/bsc.py"
+      "dest": "/api/research.py"
     },
     {
       "src": "^/api/scheduler$",

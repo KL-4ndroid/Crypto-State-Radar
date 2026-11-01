@@ -1,4 +1,4 @@
-"""Protected bounded read-only collection. GET never collects or executes."""
+"""Protected read-only operations, hosted by the existing research function."""
 import os
 from api.scan import handler as ScanHandler, _authorized
 from src.product import product_mode

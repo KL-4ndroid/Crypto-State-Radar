@@ -10,6 +10,8 @@ from src.operation_log import emit_operation
 
 class handler(ScanHandler):
     def do_GET(self):
+        if urlparse(self.path).path=='/api/bsc':
+            self._send(405,{'error':'method_not_allowed','execution_enabled':False});return
         # Public health metadata only; observations/signals stay in the ledger.
         if not os.getenv("CSR_RESEARCH_DATABASE_URL"):
             self._send(200,{"configured":False,"status":"not_configured"})
@@ -20,6 +22,9 @@ class handler(ScanHandler):
             self._send(503,{"configured":True,"error_type":type(exc).__name__})
 
     def do_POST(self):
+        if urlparse(self.path).path=='/api/bsc':
+            from src.bsc.http import handler as BSCHandler
+            return BSCHandler.do_POST(self)
         if os.getenv('CSR_PRODUCT_MODE')=='bsc':
             self._send(410,{'error':'futures_worker_retired','product':'bsc'});return
         secret = os.getenv("CSR_WORKER_TOKEN")

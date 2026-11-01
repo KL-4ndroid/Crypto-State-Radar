@@ -206,3 +206,16 @@ def test_range_failure_never_becomes_empty_success_or_advanced_cursor(stream,mon
             return super().call(method,args)
     with pytest.raises(RuntimeError):collect_logs(stream,Failed())
     assert stream.load()[0]==0
+
+
+@pytest.mark.parametrize('path,method,status',[
+    ('/api/bsc','GET',405),('/api/bsc?operation=publish','POST',401),('/api/research','POST',410)])
+def test_shared_research_function_keeps_bsc_auth_and_retirement_boundaries(monkeypatch,path,method,status):
+    from api.research import handler
+    monkeypatch.setenv('CSR_PRODUCT_MODE','bsc');monkeypatch.setenv('CSR_WORKER_TOKEN','fixture-only')
+    class Request:
+        headers={}
+        def _send(self,code,payload):self.result=(code,payload)
+    request=Request();request.path=path
+    getattr(handler,'do_'+method)(request)
+    assert request.result[0]==status
