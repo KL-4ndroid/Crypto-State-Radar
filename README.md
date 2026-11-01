@@ -8,6 +8,8 @@ Released research scope: PRs [#20](https://github.com/KL-4ndroid/Crypto-State-Ra
 
 See [release notes](docs/v33/09_research_release.md) for delivered features, verification and remaining work, and [current status](docs/current-status.md) for the production system. This is a release of the existing research work, not a completed or validated V3.3 trading model.
 
+Algorithms now share a replaceable adapter contract across live V2 scans, V2 replay and V3 research evaluation. See [updating and replacing algorithms](docs/algorithm-updates.md) for versioned rules, state isolation and rollback. Inspect available models with `.venv/Scripts/python.exe tools/algorithms.py list`; V3 live selection remains blocked until validation is complete.
+
 ## Goals
 
 - Preserve recent Binance futures historical datasets before exchange retention windows expire.

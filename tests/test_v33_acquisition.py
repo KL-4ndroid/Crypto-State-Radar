@@ -65,6 +65,28 @@ def statistics(source,params):
     return rows
 
 
+def test_archive_at_cap_stops_before_network(env):
+    store,archive,clock=env
+    archive.max_objects=1
+    archive.put(b'previous-response')
+    w,http=worker(env,statistics)
+    report=w.cycle(['BTCUSDT'],['oi'],BASE)
+    assert report['storage_blocked'] is True
+    assert http.calls==[]
+    assert report['snapshot_published'] is False
+
+
+def test_archive_put_failure_stops_remaining_requests(env,monkeypatch):
+    store,archive,clock=env
+    def exhausted(body):raise OSError('quota exhausted')
+    monkeypatch.setattr(archive,'put',exhausted)
+    w,http=worker(env,statistics)
+    report=w.cycle(['BTCUSDT'],['oi','taker'],BASE)
+    assert report['storage_blocked'] is True
+    assert len(http.calls)==1
+    assert report['snapshot_published'] is False
+
+
 def test_closed_stats_quantity_units_primitive_features_and_no_model_writes(env):
     w,http=worker(env,statistics)
     report=w.cycle(['BTCUSDT'],['oi','taker'],BASE)

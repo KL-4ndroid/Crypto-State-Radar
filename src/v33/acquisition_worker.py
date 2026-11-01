@@ -31,6 +31,9 @@ class AcquisitionWorker:
         now=utc(self.clock());start=utc(start);start_ms=int(start.timestamp()*1000)
         if start_ms%300000 or start>now:raise ValueError('bootstrap start must be a past five-minute boundary')
         results=[]
+        storage=self.archive.stats()
+        if storage.get('objects',0)>=storage.get('max_objects',float('inf')) or storage.get('logical_payload_bytes',0)>=storage.get('max_total_bytes',float('inf')):
+            return self.report(results,storage_blocked=True)
         for symbol in sorted(set(symbols)):
             order={'premium_mark_index':0,'oi':1,'taker':2,'global_accounts':3,'top_account':4,'top_position':5,'funding_settlement':6,'spot_aggtrades':7,'perp_aggtrades':8}
             for source in sorted(set(sources),key=lambda s:order[s]):
@@ -88,13 +91,15 @@ class AcquisitionWorker:
                     try:self.queue.fail(claim,now,type(exc).__name__,delay,archive)
                     except StaleAcquisition:pass
                     results.append({'source':source,'symbol':symbol,'status':'WAITING_FOR_CLOSED_DATA' if isinstance(exc,NoClosedData) else 'UNAVAILABLE','error_type':type(exc).__name__})
+                    if isinstance(exc,OSError):
+                        return self.report(results,storage_blocked=True)
                     if isinstance(exc,ProviderError) and exc.status in {418,429,451}:
                         return self.report(results,provider_blocked=True)
         return self.report(results)
 
-    def report(self,results,provider_blocked=False):
+    def report(self,results,provider_blocked=False,storage_blocked=False):
         return {'namespace':'SHADOW','run_id':self.queue.store.run_id,'results':results,
-                'request_metrics':self.budget.report(),'provider_blocked':provider_blocked,
+                'request_metrics':self.budget.report(),'provider_blocked':provider_blocked,'storage_blocked':storage_blocked,
                 'request_weight':getattr(self.transport,'measurements',{'coverage':'NOT_MEASURED_BY_FIXTURE'}),
                 'duration_seconds':round(time.monotonic()-self.started,3),'archive_storage':self.archive.stats(),
                 'streams':self.queue.summary(),

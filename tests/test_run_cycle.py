@@ -83,7 +83,7 @@ def test_repeated_signal_state_is_persisted_without_duplicate_signal(monkeypatch
         decision = {
             "symbol": "EVAAUSDT",
             "observed_at": "2026-10-29T12:00:00+00:00",
-            "model_version": "test",
+            "model_version": "V2.4.1-alpha",
             "pump_score": 10.0,
             "dump_score": 45.0,
             "state": "EARLY_WARNING",
@@ -95,7 +95,7 @@ def test_repeated_signal_state_is_persisted_without_duplicate_signal(monkeypatch
             "features": {"price": 1.1, "open_interest": 10_000_000, "price_change_1h": 0.0, "oi_change_1h": 5.0},
         }
         classified = SimpleNamespace(to_dict=lambda: dict(decision))
-        with patch("src.run_cycle.collect_market", return_value=[snapshot(oi1=0.05)]), patch("src.run_cycle.classify", return_value=classified):
+        with patch("src.run_cycle.collect_market", return_value=[snapshot(oi1=0.05)]), patch("src.algorithms.v2.radar_engine.classify", return_value=classified):
             first = run(["EVAAUSDT"], root=root)
             second = run(["EVAAUSDT"], root=root)
 
@@ -131,7 +131,7 @@ def test_real_classifier_receives_enrichment_and_writes_validatable_signal(monke
     assert signal["state"] == "LONG_READY"
     assert signal["entry_price"] == 1.1
     assert signal["model_version"] == "V2.4.1-alpha"
-    import validation_cycle
+    from src import validation_cycle
     from datetime import timedelta
     observed = datetime.fromisoformat(signal["observed_at"])
     first = observed.replace(second=0, microsecond=0)

@@ -10,11 +10,18 @@ def https_origin(value):
 
 
 def configuration_checks(environment,stage="preview"):
+    from .algorithms.registry import resolve
+    try:
+        resolve(environment.get('CSR_ALGORITHM_ID', 'radar-v2'), target='live')
+        algorithm_ready=True
+    except ValueError:
+        algorithm_ready=False
     scan=environment.get("CSR_SCAN_TOKEN","")
     worker=environment.get("CSR_WORKER_TOKEN","")
     key=environment.get("CSR_STATE_KEY","")
     url=urlparse(environment.get("CSR_RESEARCH_WORKER_URL",""))
     checks = {
+        "algorithm_live_adapter_ready":algorithm_ready,
         "database_configured":bool(environment.get("CSR_RESEARCH_DATABASE_URL")),
         "database_environment_matches":environment.get("CSR_RESEARCH_ENVIRONMENT")==stage,
         "scan_token_configured":bool(scan),

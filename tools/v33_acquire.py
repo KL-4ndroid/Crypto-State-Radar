@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from src.research_journal import ResearchJournal
 from src.v33.archive import FileArchive
+from src.v33.journal_archive import JournalArchive
 from src.v33.acquisition import install_acquisition
 from src.v33.acquisition_sources import SUPPORTED
 from src.v33.acquisition_worker import AcquisitionWorker
@@ -26,6 +27,7 @@ def main():
     parser.add_argument('--start',help='UTC/aware five-minute bootstrap boundary; existing cursors are retained')
     parser.add_argument('--journal',type=Path,default=Path('data/v33/acquisition.sqlite3'))
     parser.add_argument('--archive',type=Path,default=Path('data/v33/raw'))
+    parser.add_argument('--archive-backend',choices=['file','journal'],default='file')
     parser.add_argument('--max-requests',type=int,default=12)
     parser.add_argument('--page-limit',type=int,default=500)
     parser.add_argument('--output',type=Path)
@@ -37,12 +39,12 @@ def main():
     start=utc(args.start) if args.start else datetime.fromtimestamp((int(now.timestamp())//300-12)*300,timezone.utc)
     plan={'namespace':'SHADOW','run_id':args.run_id,'symbols':sorted(set(args.symbols)),
         'sources':sorted(set(args.sources)),'new_stream_bootstrap':stamp(start),'max_requests':args.max_requests,
-        'page_limit':args.page_limit,'persistent_local_archive':True,'scheduled':False,'production_writes':False}
+        'page_limit':args.page_limit,'persistent_local_archive':True,'archive_backend':args.archive_backend,'scheduled':False,'production_writes':False}
     if args.command=='plan':report=plan
     else:
-        archive=FileArchive(args.archive)
         journal=ResearchJournal(args.journal)
         try:
+            archive=JournalArchive(journal) if args.archive_backend=='journal' else FileArchive(args.archive)
             install_local(journal);install_acquisition(journal)
             store=ContractStore(journal,'SHADOW',args.run_id)
             report=AcquisitionWorker(store,archive,max_requests=args.max_requests,page_limit=args.page_limit).cycle(args.symbols,args.sources,start) if args.command=='once' else {'network_requested':False}

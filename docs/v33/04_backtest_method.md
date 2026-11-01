@@ -1,4 +1,6 @@
-# 研究方法與下一階段（本輪不實作）
+# 研究方法與實作進度
+
+2026-10-31 完整版後續：離線成交研究引擎、成本／funding／path 檢查、purged 時序分割與 cluster uncertainty 已新增，操作與限制見 [完整版進度](10_completion_progress.md)。下方保留原始骨架交付時的待辦說明；nested calibration、真實事件資料與模型有效性仍未完成。
 
 V3.3 的研究有效性尚未驗證。本輪只提供 causal store／state replay，不把它稱為 executable trading backtest。
 
