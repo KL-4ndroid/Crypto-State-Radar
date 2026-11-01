@@ -3,8 +3,11 @@ from pathlib import Path
 import json
 from .contracts import CONTRACT_VERSION, REFERENCE_FEATURES, digest, encode, evaluation_key, scope, snapshot, stamp
 from .registry import validate_rule
-from .fsm import advance, initial, TERMINALS
+from .fsm import initial, TERMINALS
 from ..research_journal import RevisionConflict
+from ..retry_policy import utc
+from ..algorithms.contracts import AlgorithmInput, bind
+from ..algorithms.v33 import V33Algorithm
 
 
 def install_local(journal):
@@ -28,6 +31,7 @@ class ContractStore:
             raise ValueError('production writes require an explicitly authorized live adapter')
         self.journal=journal;self.namespace=namespace;self.run_id=run_id
         self.prefix=(namespace,run_id)
+        self._algorithms={}
 
     def kind(self,name):
         return 'v33:'+self.namespace+':'+digest(self.run_id)+':'+name
@@ -95,6 +99,14 @@ class ContractStore:
         rule=self.journal.record('v33:registry:rules',rule_version)
         if not rule or rule['status']=='RETIRED':raise ValueError('active registered rule required')
         if self.namespace=='PRODUCTION' and rule['status']!='CHAMPION':raise ValueError('production requires a champion')
+        if self.namespace=='PRODUCTION':
+            raise ValueError('V3.3 live adapter is not validated; production evaluation is disabled')
+        # Immutable rules are bootstrapped once per store, outside pure evaluation.
+        # Re-reading source files on every symbol would add filesystem work to
+        # historical batches without changing their loaded implementation.
+        if rule_version not in self._algorithms:
+            self._algorithms[rule_version]=V33Algorithm(rule)
+        algorithm=self._algorithms[rule_version]
         features=self.feature_rows(feature_ids)
         snapshot_hash,values=snapshot(features,symbol,when)
         references=REFERENCE_FEATURES | set(rule['parameters']['gate'].get('additional_past_only_features',[]))
@@ -122,10 +134,17 @@ class ContractStore:
             if expected_revision is not None and expected_revision!=revision:raise RevisionConflict('stale V3.3 stream revision')
             if head and head[1] and when<=head[1]:raise ValueError('out-of-order correction requires a separate research run')
             old=json.loads(head[2]) if head else initial()
+            # Compatibility with pre-interface V3 research heads. The rule and
+            # symbol are already scoped by this locked stream; no V2 migration.
+            if 'identity' not in old:
+                from datetime import timedelta
+                old=bind(algorithm.identity,symbol,head[1] if head and head[1] else utc(when)-timedelta(microseconds=1),old)
             # Source integrity is derived from immutable lineage, never supplied
             # as a caller-controlled quality flag.
-            values['source_integrity']=bool(sources) and all(s and s['source_integrity'] and s['effective_time'] is not None and s['availability_basis']!='ASSUMED' for s in sources)
-            state,result,events=advance(old,values,features,when,key,rule['parameters'])
+            integrity=bool(sources) and all(s and s['source_integrity'] and s['effective_time'] is not None and s['availability_basis']!='ASSUMED' for s in sources)
+            outcome=algorithm.evaluate(AlgorithmInput(symbol,when,feature_rows=tuple(features),
+                previous_state=old,source_integrity=integrity))
+            state,result,events=outcome.next_state,outcome.native,list(outcome.events)
             # Parent checks inspect the full durable chain, including earlier evaluations.
             local={}
             for event in events:

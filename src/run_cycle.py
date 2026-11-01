@@ -5,14 +5,15 @@ import json
 import hashlib
 import time
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor
 try:
     from .live_collector import collect_market
     from .live_features import derive_live_features
     from .model_contract import snapshot_features, number, MODEL_VERSION, model_manifest
-    from .radar_engine import classify
-    from .state_machine import SymbolState, transition, defer_state, encode_snapshot, decode_snapshot
+    from .algorithms.contracts import AlgorithmInput, StateMismatch
+    from .algorithms.registry import resolve
+    from .state_machine import SymbolState, defer_state, encode_snapshot, decode_snapshot
     from .state_store import state_store_from_env
     from .research_journal import open_journal
     from .scan_plan import plan_scan, drain_candidates
@@ -22,8 +23,12 @@ except ImportError:
     from live_collector import collect_market
     from live_features import derive_live_features
     from model_contract import snapshot_features, number, MODEL_VERSION, model_manifest
-    from radar_engine import classify
-    from state_machine import SymbolState, transition, defer_state, encode_snapshot, decode_snapshot
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from src.algorithms.contracts import AlgorithmInput, StateMismatch
+    from src.algorithms.registry import resolve
+    from state_machine import SymbolState, defer_state, encode_snapshot, decode_snapshot
     from state_store import state_store_from_env
     from research_journal import open_journal
     from scan_plan import plan_scan, drain_candidates
@@ -45,6 +50,9 @@ def _enrichment_candidates(snapshots, previous, now):
 
 
 def run(symbols=None, root="data/journal", drain=False, operation_id=None):
+    # Resolve before opening storage or fetching market data. Unknown/unreleased
+    # algorithms fail explicitly rather than falling back to a different model.
+    algorithm = resolve(os.getenv('CSR_ALGORITHM_ID', 'radar-v2'), target='live')
     started_at, started = datetime.now(timezone.utc), time.monotonic()
     budget = RequestBudget()
     token = CURRENT.set(budget)
@@ -52,6 +60,8 @@ def run(symbols=None, root="data/journal", drain=False, operation_id=None):
     try:
         journal = open_journal(root)
         revision, saved = journal.load()
+        if saved.get('algorithm') is not None and saved['algorithm'] != algorithm.identity.row():
+            raise StateMismatch('live snapshot algorithm differs; migrate explicitly or use isolated storage')
         if operation_id:
             receipt = journal.record("scheduler_operations", operation_id)
             if receipt is not None:
@@ -63,6 +73,10 @@ def run(symbols=None, root="data/journal", drain=False, operation_id=None):
         if os.getenv("VERCEL_ENV") not in {None,"production"} and mode=="live" and os.getenv("CSR_STATE_KEY","") in {"","crypto-state-radar:state:v1"}:
             raise RuntimeError("preview publication requires an isolated CSR_STATE_KEY")
         previous = decode_snapshot(saved) if saved.get("states") is not None else lifecycle.all()
+        # Existing snapshots predate the envelope. Adopt only the known V2
+        # version, including unselected symbols; never leave mixed READY states.
+        for old_state in previous.values():
+            algorithm.adopt_legacy(old_state, started_at)
         queue = saved.get("pending", {})
         capacity=DRAIN_LIMIT if drain else ENRICHMENT_LIMIT
         if drain:
@@ -88,7 +102,8 @@ def run(symbols=None, root="data/journal", drain=False, operation_id=None):
         now = datetime.now(timezone.utc)
         states = dict(previous)
         run_id = str(uuid4())
-        records = [("models",MODEL_VERSION,model_manifest())]
+        records = [("models",MODEL_VERSION,model_manifest()),
+                   ('algorithms', algorithm.identity.artifact_id, algorithm.identity.row())]
         summary = {"run_id":run_id,"mode":mode,"model_version":MODEL_VERSION,"started_at":started_at.isoformat(),
             "scan_policy":"scan-v2-fair-retry","capacity":capacity,"drain":drain,
             "collected_at":collected_at.isoformat(),"observed_at":now.isoformat(),"evaluated_at":now.isoformat(),
@@ -125,8 +140,14 @@ def run(symbols=None, root="data/journal", drain=False, operation_id=None):
                 continue
             features.update(extra)
             features["observed_at"] = snap.get("observed_at")
-            decision = classify(symbol,features,now=now).to_dict()
-            state,event = transition(old,decision,now)
+            # Existing V2 state has an explicit compatibility adapter. V3 uses
+            # its own state envelope and cannot inherit V2 READY anchors.
+            prior_time = old.checked_at or old.updated_at or (now-timedelta(microseconds=1))
+            outcome = algorithm.evaluate(AlgorithmInput(symbol, now, values=features,
+                previous_state=algorithm.adopt_legacy(old, prior_time)))
+            decision = outcome.native
+            state = SymbolState(**outcome.next_state['payload'])
+            event = dict(outcome.events[0]) if outcome.events else None
             states[symbol] = state
             if state.evaluation_status=="pending":
                 reason=state.pending_reason or "state_requires_review"
@@ -168,7 +189,8 @@ def run(symbols=None, root="data/journal", drain=False, operation_id=None):
         if previous_full is None and saved.get("last_scan") and not saved["last_scan"].get("drain",True):
             previous_full=saved["last_scan"]
         payload = dict(encode_snapshot(states),pending=queue,last_scan=summary,
-            last_full_scan=previous_full if drain else summary.copy(),model_version=MODEL_VERSION)
+            last_full_scan=previous_full if drain else summary.copy(),model_version=MODEL_VERSION,
+            algorithm=algorithm.identity.row())
         payload = journal.commit_cycle(revision,payload,records)
         # DB is authoritative research ledger; Upstash is its revisioned read view.
         summary["revision"] = payload["revision"]

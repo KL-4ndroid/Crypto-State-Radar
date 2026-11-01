@@ -8,15 +8,17 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from .model_contract import history_features, snapshot_features, MODEL_VERSION, model_manifest
-from .radar_engine import classify
-from .state_machine import SymbolState,transition
+from .algorithms.contracts import AlgorithmInput
+from .algorithms.registry import resolve
+from .state_machine import SymbolState
 from .event_evaluation import detect_events,match_events
 from .retry_policy import utc
 
 
 def replay(frames,market):
+    algorithm = resolve('radar-v2')
     states, system_states, predictions, warnings = {},{},[],[]
     seen=set()
     for frame in sorted(frames,key=lambda f:(utc(f["as_of"]),f["snapshot"]["symbol"])):
@@ -41,15 +43,21 @@ def replay(frames,market):
         required = ("price","open_interest","oi_change_1h","oi_change_4h","oi_change_24h","price_change_1h","price_change_4h")
         if any(features.get(k) is None for k in required) or features["price"]<=0 or features["open_interest"]<=0:
             predictions.append({"symbol":symbol,"time":now,"quality":"insufficient_data"}); continue
-        decision=classify(symbol,features,now).to_dict()
         old=states.get(symbol,SymbolState(symbol))
-        state,event=transition(old,decision,now)
+        prior = algorithm.adopt_legacy(old, old.checked_at or old.updated_at or now-timedelta(microseconds=1))
+        outcome=algorithm.evaluate(AlgorithmInput(symbol,now,values=features,previous_state=prior))
+        decision=outcome.native
+        state=SymbolState(**outcome.next_state['payload'])
+        event=dict(outcome.events[0]) if outcome.events else None
         states[symbol]=state
         selected=frame.get("selected",True)
         system_state=system_states.get(symbol,SymbolState(symbol))
         system_event=None
         if selected:
-            system_state,system_event=transition(system_state,decision,now)
+            prior = algorithm.adopt_legacy(system_state, system_state.checked_at or system_state.updated_at or now-timedelta(microseconds=1))
+            system_outcome=algorithm.evaluate(AlgorithmInput(symbol,now,values=features,previous_state=prior))
+            system_state=SymbolState(**system_outcome.next_state['payload'])
+            system_event=dict(system_outcome.events[0]) if system_outcome.events else None
             system_states[symbol]=system_state
         predictions.append(dict(decision,lifecycle_state=state.state,time=now,selected=selected,
             system_lifecycle_state=system_state.state,system_evaluated=selected))

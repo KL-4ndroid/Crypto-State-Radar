@@ -42,6 +42,7 @@ def work(operation, root="data/journal", operation_id=None):
                 age=(datetime.now(timezone.utc)-stamp).total_seconds() if stamp.tzinfo else None
             except (ValueError,TypeError,AttributeError):age=None
             return {"revision":revision,"pending":len(payload.get("pending",{})),"last_scan":payload.get("last_scan"),
+                "algorithm":payload.get('algorithm'),"model_version":payload.get('model_version'),
                 "mode":(payload.get("last_scan") or {}).get("mode"),"durable":bool(os.getenv("CSR_RESEARCH_DATABASE_URL")),
                 "last_full_scan_at":full_at,"full_scan_status":"unknown" if age is None or age<0 else "overdue" if age>4500 else "failed" if not full.get("scanned") else "partial" if full.get("errors") else "recent"}
         if operation == "publish":

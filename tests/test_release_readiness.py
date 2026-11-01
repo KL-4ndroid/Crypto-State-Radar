@@ -22,3 +22,9 @@ def test_qstash_requires_signatures_and_correct_origin_without_legacy_worker_url
     assert not configuration_checks(env,'production')['production_scheduler_origin_matches']
     env['QSTASH_CURRENT_SIGNING_KEY']='[SENSITIVE]'
     assert not configuration_checks(env,'production')['qstash_signing_keys_configured']
+
+
+def test_unvalidated_algorithm_is_a_release_blocker():
+    assert configuration_checks({})['algorithm_live_adapter_ready']
+    for name in ('distribution-v33', 'unknown'):
+        assert not configuration_checks({'CSR_ALGORITHM_ID':name})['algorithm_live_adapter_ready']

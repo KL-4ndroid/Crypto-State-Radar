@@ -237,6 +237,9 @@ def test_v33_postgres_namespace_concurrency_and_immutable_results(postgres):
     with ThreadPoolExecutor(max_workers=2) as executor:
         first,second=list(executor.map(evaluate,stores))
     assert first==second and first['revision']==1
+    assert first['algorithm']['algorithm_id']=='distribution-v33'
+    head=json.loads(admin.execute('SELECT payload FROM csr_v33_heads').fetchone()[0])
+    assert head['identity']==first['algorithm'] and head['symbol']=='A'
     assert admin.execute('SELECT COUNT(*) FROM csr_v33_evaluations').fetchone()[0]==1
     assert a.load()[0]==0
     for minutes in (5,10):

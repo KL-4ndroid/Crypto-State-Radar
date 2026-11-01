@@ -36,7 +36,15 @@ Bar 必填：`symbol`、`open_time`、`close_time`、`open`、`high`、`low`、`
 4. V3 Dashboard 與 SHADOW 路徑端到端驗收。
 5. 主規格 P8–P10 的持續 shadow、execution validation、guarded release。時間窗口尚未累積、模型未獲驗證時保持未通過。
 
-目前本機 data 只有 pilot 的 9 個 gzip raw objects 與一個 SQLite journal，不足以證明代表性歷史、持續完整性或 OOS 優勢。合成測試驗證的是工程行為，不是研究成效。此開發分支沒有修改或部署正式 runtime。
+目前本機 data 只有 pilot 的 9 個 gzip raw objects 與一個 SQLite journal，不足以證明代表性歷史、持續完整性或 OOS 優勢。合成測試驗證的是工程行為，不是研究成效。研究工具沒有掛入正式採集；後續正式 runtime 的介面抽離見下節。
+
+## 2026-11-01：可替換演算法介面
+
+新增 `src/algorithms`，將原 V2 classification + lifecycle 與 V3 Family + 雙 FSM 包裝成相同的 AlgorithmInput / AlgorithmOutput。正式掃描、V2 replay、V3 ContractStore 均已接入，未複製 scoring、state machine 或研究交易流程。版本指紋綁定 state，拒絕跨模型、規則、程式／特徵版本及 symbol 的無聲接手。既有 V2 快照與 V3 研究 head 有明確格式採用方式；READY 原始確認價格和 TTL 保留。
+
+更新與置換流程見 [操作指南](../algorithm-updates.md)。這一階段交付的是架構及安全切換契約；V3 正式 feature producers、持續資料、成熟 OOS／shadow／execution 證據與 Dashboard 整合仍為上方未完成項。`CSR_ALGORITHM_ID=distribution-v33` 不會開啟未驗證模型。新選擇在市場採集前拒絕，release readiness 也阻擋；單純填入 CHAMPION metadata 不會解除。
+
+驗證：完整 suite **292 passed、6 opt-in skipped**；受影響 V3 PostgreSQL 測試另行 **1 passed、5 deselected**（namespace、並行去重、immutable results、state envelope）。沿用先前 archive / acquisition / Redis 驗收，不重複執行未改動的服務。新 property test 另以 80 組多輪特徵比較 adapter 與原 V2 的 decision、state、events，並測試版本／symbol／時間拒絕、舊 READY 保留、純運算、V3 因果時鐘及未驗證版本阻擋。正式部署結果以 PR／Vercel 證據為準。
 
 ## 免費額度方向：有界 journal archive
 
