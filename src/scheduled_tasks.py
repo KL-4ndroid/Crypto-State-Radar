@@ -29,6 +29,13 @@ def execute(operation, message_id, scheduled=False):
         "started_at":datetime.now(timezone.utc).isoformat(),
         "message_id":message_id, "trigger":"qstash_schedule" if scheduled else "qstash_delivery"}
     try:
+        from .product import product_mode
+        if product_mode()=='bsc':
+            # Acknowledge already-enqueued legacy deliveries without running
+            # Futures collectors, validation or the legacy publisher.
+            receipt.update(status='retired',success=True,product='bsc',
+                           request_metrics={'requests':0,'failed_requests':0})
+            return dict(receipt)
         if os.getenv("CSR_SCHEDULER_ENABLED") != "true":
             result = {"status":"disabled"}
         else:

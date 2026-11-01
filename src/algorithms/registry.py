@@ -1,6 +1,7 @@
 """Explicit built-in allowlist. No dynamic imports or remotely supplied code."""
 from .v2 import V2Algorithm
 from .v33 import V33Algorithm
+from .bsc import BSCDiscovery
 from ..v33.registry import defaults
 
 
@@ -11,6 +12,10 @@ def resolve(algorithm_id='radar-v2', *, rule=None, target='research'):
         if rule is not None:
             raise ValueError('V2 has no external rule file; update its versioned implementation')
         algorithm = V2Algorithm()
+    elif algorithm_id == 'bsc-discovery':
+        if rule is not None:
+            raise ValueError('discovery policy has no trading rules')
+        algorithm = BSCDiscovery()
     elif algorithm_id == 'distribution-v33':
         algorithm = V33Algorithm(rule if rule is not None else defaults())
     else:

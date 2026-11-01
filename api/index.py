@@ -191,6 +191,8 @@ def _state_health() -> tuple[int, dict[str, object]]:
 
 
 def _binance_health() -> tuple[int, dict[str, object]]:
+    if os.getenv('CSR_PRODUCT_MODE')=='bsc':
+        return 410, {'error':'futures_retired','product':'bsc'}
     request = urllib.request.Request(BINANCE_EXCHANGE_INFO, headers={"User-Agent": "Crypto-State-Radar/0.4 connectivity-check"})
     try:
         with urllib.request.urlopen(request, timeout=8) as response:
@@ -234,6 +236,9 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path, probe = self._route()
+        if os.getenv('CSR_PRODUCT_MODE')=='bsc' and (path in {'/api/state','/api/state-health','/api/binance-health','/api/persistence-probe'} or probe in {'state','state-health','binance','persistence'}):
+            self._send(410,{'error':'legacy_endpoint_retired','product':'bsc'})
+            return
         if path in {"/", "/index.html"} or probe == "dashboard":
             self._send_dashboard()
             return
@@ -261,6 +266,9 @@ class handler(BaseHTTPRequestHandler):
         self._send(status, payload)
 
     def do_PUT(self) -> None:
+        if os.getenv('CSR_PRODUCT_MODE')=='bsc':
+            self._send(410,{'error':'legacy_endpoint_retired','product':'bsc'})
+            return
         if os.getenv("CSR_RESEARCH_DATABASE_URL"):
             self._send(409,{"error":"state_is_managed_by_research_ledger"})
             return

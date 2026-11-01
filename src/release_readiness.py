@@ -10,6 +10,13 @@ def https_origin(value):
 
 
 def configuration_checks(environment,stage="preview"):
+    if environment.get('CSR_PRODUCT_MODE')=='bsc':
+        return {'database_configured':bool(environment.get('CSR_RESEARCH_DATABASE_URL')),
+            'database_environment_matches':environment.get('CSR_RESEARCH_ENVIRONMENT')==stage,
+            'bsc_state_key_isolated':environment.get('CSR_STATE_KEY','').startswith(f'crypto-state-radar:bsc:{stage}:'),
+            'state_store_configured':bool(environment.get('KV_REST_API_URL') and environment.get('KV_REST_API_TOKEN')),
+            'worker_token_configured':bool(environment.get('CSR_WORKER_TOKEN')),
+            'bsc_observation_algorithm':environment.get('CSR_ALGORITHM_ID')=='bsc-discovery'}
     from .algorithms.registry import resolve
     try:
         resolve(environment.get('CSR_ALGORITHM_ID', 'radar-v2'), target='live')

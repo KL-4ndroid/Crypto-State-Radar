@@ -15,6 +15,26 @@ from src.state_store import UpstashRestStateStore
 pytestmark=pytest.mark.skipif(os.getenv("CSR_LOCAL_STORAGE_ACCEPTANCE")!="1",reason="run tools/storage_acceptance.py for isolated services")
 
 
+def test_bsc_record_stream_reuses_role_and_preserves_futures_ledger(postgres):
+    from src.record_stream import RecordStream
+    open_store,admin,psycopg=postgres
+    a,b=open_store(),open_store()
+    baseline=a.load()
+    streams=[RecordStream(a,'bsc:test:acceptance'),RecordStream(b,'bsc:test:acceptance')]
+    def commit(pair):
+        index,stream=pair
+        try:return stream.commit(0,{'product':'bsc','execution_enabled':False},[('evidence:'+str(index),{'index':index})])
+        except RevisionConflict:return None
+    with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(commit,enumerate(streams)))
+    assert sum(r is not None for r in results)==1
+    assert streams[0].load()[0]==1
+    assert a.load()==baseline
+    assert a.sql('SELECT COUNT(*) FROM csr_validation_jobs').fetchone()[0]==0
+    assert len(a.read(streams[0].kind))==2
+    with pytest.raises(psycopg.Error):
+        with admin.transaction():admin.execute('DELETE FROM csr_records WHERE kind=%s',(streams[0].kind,))
+
+
 def test_v33_journal_archive_global_quota_restore_and_runtime_isolation(postgres):
     from src.v33.journal_archive import JournalArchive
     open_store,admin,psycopg=postgres

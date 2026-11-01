@@ -18,7 +18,7 @@ def main():
     try:
         if args.command == 'list':
             rows = [dict(resolve(name).identity.row(), live_enabled=name == 'radar-v2')
-                    for name in ('radar-v2', 'distribution-v33')]
+                    for name in ('radar-v2', 'distribution-v33', 'bsc-discovery')]
         else:
             rule = json.loads(args.rule.read_text(encoding='utf-8')) if args.rule else None
             rows = resolve(args.algorithm, rule=rule, target=args.target).identity.row()

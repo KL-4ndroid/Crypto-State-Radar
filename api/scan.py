@@ -38,6 +38,9 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _run_scan(self) -> None:
+        if os.getenv('CSR_PRODUCT_MODE')=='bsc':
+            self._send(410,{'error':'futures_retired','product':'bsc'})
+            return
         secret = os.getenv("CSR_SCAN_TOKEN")
         if not secret:
             self._send(503, {"error": "scan_token_not_configured", "service": "crypto-state-radar"})

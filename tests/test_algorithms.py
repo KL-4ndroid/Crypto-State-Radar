@@ -162,8 +162,8 @@ def test_inspection_cli_lists_models_and_rejects_premature_live_switch():
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     rows = json.loads(result.stdout)
-    assert [r['algorithm_id'] for r in rows] == ['radar-v2', 'distribution-v33']
-    assert [r['live_enabled'] for r in rows] == [True, False]
+    assert [r['algorithm_id'] for r in rows] == ['radar-v2', 'distribution-v33', 'bsc-discovery']
+    assert [r['live_enabled'] for r in rows] == [True, False, False]
     blocked = subprocess.run([sys.executable, 'tools/algorithms.py', 'check', '--target', 'live'],
                              cwd=root, capture_output=True, text=True)
     assert blocked.returncode != 0 and 'not validated' in blocked.stderr

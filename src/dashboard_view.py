@@ -17,6 +17,9 @@ def encode(value):
 
 
 def publication(payload):
+    if payload.get('product')=='bsc':
+        from .bsc.view import publication as bsc_publication
+        return bsc_publication(payload)
     states = {}
     for symbol, source in payload.get("states", {}).items():
         if not isinstance(source, dict):
